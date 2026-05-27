@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>AKPOS Items</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <!-- ═══ LOGIN ═══════════════════════════════════════ -->
+  <section id="loginView" class="screen-center">
+    <div class="login-card">
+      <div class="login-hero">
+        <div class="app-icon">
+          <svg viewBox="0 0 32 32" width="32" height="32" fill="none">
+            <rect x="4" y="8" width="24" height="20" rx="2" fill="white" fill-opacity=".2"/>
+            <path d="M4 8 7 4h18l3 4H4z" fill="white" fill-opacity=".4"/>
+            <path d="M20 14a4 4 0 0 1-8 0" stroke="white" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="login-title" id="loginTitle">AKPOS Items</div>
+        <div class="login-sub" id="loginSub">Inventory Manager</div>
+      </div>
+
+      <div class="login-body">
+        <label class="field">
+          <span class="field-label" id="apiKeyLabel">API Key</span>
+          <div class="input-icon-wrap">
+            <svg class="input-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <input id="apiKeyInput" type="password" autocomplete="current-password" placeholder="Paste or type your key" />
+          </div>
+        </label>
+
+        <label class="remember-row">
+          <input id="rememberMe" type="checkbox" checked />
+          <span class="remember-text" id="rememberText">Keep me signed in</span>
+        </label>
+
+        <button id="loginBtn" class="btn btn-primary btn-full btn-lg">Sign In</button>
+        <button id="langBtnLogin" class="lang-btn-login">中文</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ LIST ═════════════════════════════════════════ -->
+  <section id="listView" class="screen" hidden>
+
+    <header class="topbar">
+      <div class="topbar-brand">
+        <div class="topbar-icon">
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
+            <rect x="2" y="5" width="16" height="13" rx="1.5" fill="currentColor" fill-opacity=".3"/>
+            <path d="M2 5l2-3h12l2 3H2z" fill="currentColor" fill-opacity=".5"/>
+            <path d="M13 9a3 3 0 0 1-6 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span class="topbar-name" id="topbarName">Inventory</span>
+        <span id="itemCount" class="item-count-badge">—</span>
+      </div>
+      <button id="langBtn" class="ghost-btn lang-btn" aria-label="Switch language">中文</button>
+      <button id="logoutBtn" class="ghost-btn" title="Sign out" aria-label="Sign out">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </header>
+
+    <div class="search-row">
+      <div class="search-field">
+        <svg class="search-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input id="searchInput" type="search" placeholder="Search name, UPC or SKU…" autocomplete="off" enterkeyhint="search" />
+        <button id="searchClearBtn" class="clear-btn" hidden aria-label="Clear">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <button id="searchScanBtn" class="scan-btn" title="Scan barcode to search">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/>
+          <path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/>
+          <line x1="7" y1="8" x2="7" y2="16"/><line x1="11" y1="8" x2="11" y2="16"/>
+          <line x1="15" y1="8" x2="15" y2="16"/>
+        </svg>
+        <span id="scanBtnText">Scan</span>
+      </button>
+    </div>
+
+    <ul id="itemsList" class="list"></ul>
+
+    <div id="loadMoreSpinner" class="load-more-spinner" hidden>
+      <span class="spinner"></span>
+    </div>
+
+    <div id="listSentinel"></div>
+
+    <div id="skeleton" class="list" hidden>
+      <li class="skel-card"></li>
+      <li class="skel-card"></li>
+      <li class="skel-card"></li>
+      <li class="skel-card skel-card--sm"></li>
+    </div>
+
+    <div id="listEmpty" class="empty" hidden>
+      <svg viewBox="0 0 48 48" width="52" height="52" fill="none">
+        <rect x="8" y="14" width="32" height="26" rx="3" stroke="currentColor" stroke-width="2" opacity=".25"/>
+        <path d="M8 14l4-6h24l4 6H8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" opacity=".25"/>
+        <path d="M30 23a6 6 0 0 1-12 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".25"/>
+      </svg>
+      <p class="empty-title" id="listEmptyTitle">No items found</p>
+      <p class="empty-sub" id="listEmptySub">Try a different search or scan a barcode</p>
+    </div>
+
+    <button id="newBtn" class="fab" aria-label="Add new item">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      <span id="newBtnText">New Item</span>
+    </button>
+  </section>
+
+  <!-- ═══ EDIT / NEW ════════════════════════════════════ -->
+  <section id="editView" class="screen" hidden>
+    <header class="topbar">
+      <button id="backBtn" class="ghost-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="topbar-center">
+        <div id="editTitle" class="topbar-title">Edit Item</div>
+        <div id="editSub" class="topbar-meta"></div>
+      </div>
+      <div style="width:36px"></div>
+    </header>
+
+    <form id="editForm" novalidate>
+      <div id="formFields" class="form-sections"></div>
+      <div class="save-footer">
+        <button id="cancelBtn" class="btn btn-full btn-lg" type="button">Cancel</button>
+        <button id="saveBtn" class="btn btn-primary btn-full btn-lg" type="submit">Save Changes</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ═══ SCANNER ═══════════════════════════════════════ -->
+  <div id="scannerOverlay" class="scanner" hidden>
+    <video id="scannerVideo" playsinline muted autoplay></video>
+    <div class="scanner-shade"></div>
+
+    <div class="scanner-header">
+      <button id="scannerCloseBtn" class="scanner-pill-btn" aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+      <span id="scannerStatus" class="scanner-label">Point at a barcode</span>
+      <button id="scannerTorchBtn" class="scanner-pill-btn" hidden aria-label="Torch">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 2h6l1 5-4 15-4-15z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="scan-box" id="scanBox">
+      <span class="scan-corner c-tl"></span>
+      <span class="scan-corner c-tr"></span>
+      <span class="scan-corner c-bl"></span>
+      <span class="scan-corner c-br"></span>
+      <div class="scan-laser"></div>
+    </div>
+
+    <div class="scanner-footer">
+      <button id="scannerAltBtn" class="scanner-alt-btn">Enter barcode manually</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
