@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('scripts:', JSON.stringify\\(p.scripts,null,2\\)\\); console.log\\('main:', p.main\\);\")",
+      "Bash(Test-Path \"c:\\\\Users\\\\jacky\\\\OneDrive\\\\桌面\\\\MYAPP\\\\.env\")",
+      "Bash(pkill -f \"node server.js\")",
+      "Bash(node server.js)",
+      "Bash(curl -s http://localhost:3000/api/health)",
+      "Bash(curl -s \"http://localhost:3000/api/items?limit=5&offset=0\" -H \"X-API-Key: A\")",
+      "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\)\\); console.log\\('page 0 count:', d.length, '| first:', d[0]?.Description?.slice\\(0,30\\)\\)\")",
+      "Bash(curl -s \"http://localhost:3000/api/items?limit=3&offset=0\" -H \"X-API-Key: A\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f'  {i[\\\\\"UPC\\\\\"]} | {i[\\\\\"Description\\\\\"][:30]}'\\) for i in d]\")",
+      "Bash(curl -s \"http://localhost:3000/api/items?limit=3&offset=3\" -H \"X-API-Key: A\")",
+      "Bash(pkill -f \"node server.js\" 2>/dev/null; sleep 1; cd \"c:/Users/jacky/OneDrive/桌面/MYAPP\" && node server.js > /tmp/srv.log 2>&1 & *)",
+      "Read(//tmp/**)"
+    ]
+  }
+}
