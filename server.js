@@ -295,6 +295,186 @@ app.put('/api/items/:upc', requireApiKey, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ---- Sales routes ----
+
+function salesDateRange(range) {
+  const now = new Date();
+  const tod = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tom = new Date(tod.getTime() + 86400000);
+  switch (range) {
+    case 'yesterday': return { from: new Date(tod.getTime() - 86400000), to: tod };
+    case 'week': {
+      const dow = tod.getDay();
+      const mon = new Date(tod.getTime() - (dow === 0 ? 6 : dow - 1) * 86400000);
+      return { from: mon, to: tom };
+    }
+    case 'month': return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: tom };
+    default: return { from: tod, to: tom }; // today
+  }
+}
+
+// Summary stats for a date range + previous period comparison
+app.get('/api/sales/summary', requireApiKey, async (req, res) => {
+  const { from, to } = salesDateRange(req.query.range || 'today');
+  const span     = to - from;
+  const prevFrom = new Date(from.getTime() - span);
+  try {
+    const pool = await getPool();
+    const [r, rSold] = await Promise.all([
+      pool.request()
+        .input('from',     sql.DateTime, from)
+        .input('to',       sql.DateTime, to)
+        .input('prevFrom', sql.DateTime, prevFrom)
+        .query(`
+          SELECT
+            ISNULL(SUM(CASE WHEN Logged >= @from     AND Logged < @to   THEN TotalAfterTax ELSE 0 END), 0) AS Revenue,
+            COUNT(      CASE WHEN Logged >= @from     AND Logged < @to   THEN 1             END)           AS TransCount,
+            ISNULL(SUM(CASE WHEN Logged >= @prevFrom AND Logged < @from  THEN TotalAfterTax ELSE 0 END), 0) AS PrevRevenue,
+            COUNT(      CASE WHEN Logged >= @prevFrom AND Logged < @from  THEN 1             END)           AS PrevTransCount
+          FROM AKPOS.dbo.TransHeaders
+          WHERE TransStatus = 'C'
+            AND Logged >= @prevFrom AND Logged < @to
+        `),
+      pool.request()
+        .input('from',     sql.DateTime, from)
+        .input('to',       sql.DateTime, to)
+        .input('prevFrom', sql.DateTime, prevFrom)
+        .query(`
+          SELECT
+            ISNULL(SUM(CASE WHEN TH.Logged >= @from     AND TH.Logged < @to   THEN TL.Quantity ELSE 0 END), 0) AS ItemsSold,
+            ISNULL(SUM(CASE WHEN TH.Logged >= @prevFrom AND TH.Logged < @from  THEN TL.Quantity ELSE 0 END), 0) AS PrevItemsSold
+          FROM AKPOS.dbo.TransHeaders TH
+          INNER JOIN AKPOS.dbo.TransLines TL ON TL.TransNo = TH.TransNo
+          WHERE TH.TransStatus = 'C'
+            AND TL.LineType = 'S'
+            AND TL.IsVoided = 0
+            AND TH.Logged >= @prevFrom AND TH.Logged < @to
+        `),
+    ]);
+    const row  = r.recordset[0];
+    const sold = rSold.recordset[0];
+    const rev  = Number(row.Revenue)         || 0;
+    const cnt  = Number(row.TransCount)      || 0;
+    const pRev = Number(row.PrevRevenue)     || 0;
+    const pCnt = Number(row.PrevTransCount)  || 0;
+    const itm  = Number(sold.ItemsSold)      || 0;
+    const pItm = Number(sold.PrevItemsSold)  || 0;
+    res.json({ revenue: rev, transCount: cnt, avgPerTrans: cnt > 0 ? rev / cnt : 0,
+               prevRevenue: pRev, prevTransCount: pCnt,
+               itemsSold: itm, prevItemsSold: pItm });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Last 6 months aggregated by month
+app.get('/api/sales/monthly', requireApiKey, async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`
+      SELECT
+        YEAR(Logged)  AS yr,
+        MONTH(Logged) AS mo,
+        COUNT(*)                       AS TransCount,
+        ISNULL(SUM(TotalAfterTax), 0)  AS Revenue
+      FROM AKPOS.dbo.TransHeaders
+      WHERE TransStatus = 'C'
+        AND Logged >= DATEADD(month, -5, DATEADD(month, DATEDIFF(month, 0, GETDATE()), 0))
+      GROUP BY YEAR(Logged), MONTH(Logged)
+      ORDER BY yr ASC, mo ASC
+    `);
+    res.json(r.recordset);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Hourly (today/yesterday) or daily (week/month) revenue trend
+app.get('/api/sales/trend', requireApiKey, async (req, res) => {
+  const range = req.query.range || 'today';
+  const { from, to } = salesDateRange(range);
+  const isHourly = range === 'today' || range === 'yesterday';
+  try {
+    const pool = await getPool();
+    const [r, rSold] = await Promise.all([
+      pool.request()
+        .input('from', sql.DateTime, from)
+        .input('to',   sql.DateTime, to)
+        .query(isHourly ? `
+          SELECT DATEPART(hour, Logged) AS period,
+                 ISNULL(SUM(TotalAfterTax), 0) AS Revenue, COUNT(*) AS TransCount
+          FROM AKPOS.dbo.TransHeaders
+          WHERE TransStatus = 'C' AND Logged >= @from AND Logged < @to
+          GROUP BY DATEPART(hour, Logged) ORDER BY period ASC
+        ` : `
+          SELECT CONVERT(varchar(10), Logged, 120) AS period,
+                 ISNULL(SUM(TotalAfterTax), 0) AS Revenue, COUNT(*) AS TransCount
+          FROM AKPOS.dbo.TransHeaders
+          WHERE TransStatus = 'C' AND Logged >= @from AND Logged < @to
+          GROUP BY CONVERT(varchar(10), Logged, 120) ORDER BY period ASC
+        `),
+      pool.request()
+        .input('from', sql.DateTime, from)
+        .input('to',   sql.DateTime, to)
+        .query(isHourly ? `
+          SELECT DATEPART(hour, TH.Logged) AS period,
+                 ISNULL(SUM(TL.Quantity), 0) AS ItemsSold
+          FROM AKPOS.dbo.TransHeaders TH
+          INNER JOIN AKPOS.dbo.TransLines TL ON TL.TransNo = TH.TransNo
+          WHERE TH.TransStatus = 'C' AND TL.LineType = 'S' AND TL.IsVoided = 0
+            AND TH.Logged >= @from AND TH.Logged < @to
+          GROUP BY DATEPART(hour, TH.Logged) ORDER BY period ASC
+        ` : `
+          SELECT CONVERT(varchar(10), TH.Logged, 120) AS period,
+                 ISNULL(SUM(TL.Quantity), 0) AS ItemsSold
+          FROM AKPOS.dbo.TransHeaders TH
+          INNER JOIN AKPOS.dbo.TransLines TL ON TL.TransNo = TH.TransNo
+          WHERE TH.TransStatus = 'C' AND TL.LineType = 'S' AND TL.IsVoided = 0
+            AND TH.Logged >= @from AND TH.Logged < @to
+          GROUP BY CONVERT(varchar(10), TH.Logged, 120) ORDER BY period ASC
+        `),
+    ]);
+    const soldMap = {};
+    for (const row of rSold.recordset) soldMap[row.period] = Number(row.ItemsSold) || 0;
+    const rows = r.recordset.map(row => ({ ...row, ItemsSold: soldMap[row.period] || 0 }));
+    res.json({ mode: isHourly ? 'hourly' : 'daily', rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Top-selling items by quantity for a given range, with pagination
+app.get('/api/sales/trending', requireApiKey, async (req, res) => {
+  const range  = req.query.range === 'monthly' ? 'month' : (req.query.range || 'today');
+  const { from, to } = salesDateRange(range);
+  const limit  = Math.min(parseInt(req.query.limit,  10) || 5,  100);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0,  0);
+  const rowFrom = offset + 1;
+  const rowTo   = offset + limit;
+  try {
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('from', sql.DateTime, from)
+      .input('to',   sql.DateTime, to)
+      .query(`
+        WITH Ranked AS (
+          SELECT
+            TL.UPC,
+            ISNULL(I.Description, TL.UPC)  AS Description,
+            ISNULL(SUM(TL.Quantity), 0)     AS TotalQty,
+            ISNULL(SUM(TL.SubAfterTax), 0)  AS TotalRevenue,
+            ROW_NUMBER() OVER (ORDER BY SUM(TL.Quantity) DESC) AS _rn
+          FROM AKPOS.dbo.TransHeaders TH
+          INNER JOIN AKPOS.dbo.TransLines TL ON TL.TransNo = TH.TransNo
+          LEFT  JOIN AKPOS.dbo.Items I       ON I.UPC = TL.UPC
+          WHERE TH.TransStatus = 'C'
+            AND TL.LineType = 'S'
+            AND TL.IsVoided = 0
+            AND TH.Logged >= @from AND TH.Logged < @to
+          GROUP BY TL.UPC, I.Description
+        )
+        SELECT UPC, Description, TotalQty, TotalRevenue
+        FROM Ranked
+        WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
+      `);
+    res.json(r.recordset);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ---- HTTPS bootstrap (camera needs a secure context) ----
 function loadOrCreateCert() {
   const dir = path.join(__dirname, 'certs');

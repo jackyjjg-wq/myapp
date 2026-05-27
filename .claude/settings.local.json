@@ -13,7 +13,10 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(f'  {i[\\\\\"UPC\\\\\"]} | {i[\\\\\"Description\\\\\"][:30]}'\\) for i in d]\")",
       "Bash(curl -s \"http://localhost:3000/api/items?limit=3&offset=3\" -H \"X-API-Key: A\")",
       "Bash(pkill -f \"node server.js\" 2>/dev/null; sleep 1; cd \"c:/Users/jacky/OneDrive/桌面/MYAPP\" && node server.js > /tmp/srv.log 2>&1 & *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(curl -s -H \"X-API-Key: A\" \"http://localhost:3000/api/sales/summary?range=today\")",
+      "Bash(curl -s -H \"X-API-Key: A\" \"http://localhost:3000/api/sales/monthly\")",
+      "Bash(curl -s -H \"X-API-Key: A\" \"http://localhost:3000/api/health\")"
     ]
   }
 }

@@ -28,7 +28,6 @@
         <div class="login-title" id="loginTitle">AKPOS Items</div>
         <div class="login-sub" id="loginSub">Inventory Manager</div>
       </div>
-
       <div class="login-body">
         <label class="field">
           <span class="field-label" id="apiKeyLabel">API Key</span>
@@ -39,22 +38,81 @@
             <input id="apiKeyInput" type="password" autocomplete="current-password" placeholder="Paste or type your key" />
           </div>
         </label>
-
         <label class="remember-row">
           <input id="rememberMe" type="checkbox" checked />
           <span class="remember-text" id="rememberText">Keep me signed in</span>
         </label>
-
         <button id="loginBtn" class="btn btn-primary btn-full btn-lg">Sign In</button>
         <button id="langBtnLogin" class="lang-btn-login">中文</button>
       </div>
     </div>
   </section>
 
+  <!-- ═══ HOME ══════════════════════════════════════════ -->
+  <section id="homeView" class="screen-center" hidden>
+    <div class="home-wrapper">
+      <div class="home-header">
+        <div class="topbar-icon">
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
+            <rect x="2" y="5" width="16" height="13" rx="1.5" fill="currentColor" fill-opacity=".3"/>
+            <path d="M2 5l2-3h12l2 3H2z" fill="currentColor" fill-opacity=".5"/>
+            <path d="M13 9a3 3 0 0 1-6 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <span id="homeBrandName" class="home-brand-text">AKPOS Items</span>
+      </div>
+
+      <div class="home-options">
+        <button id="homeInventoryBtn" class="home-option-card">
+          <div class="home-option-icon">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/>
+              <path d="M16 10a4 4 0 0 1-8 0"/>
+            </svg>
+          </div>
+          <div class="home-option-body">
+            <div class="home-option-title" id="homeInvTitle">Inventory</div>
+            <div class="home-option-sub"   id="homeInvSub">Manage items &amp; prices</div>
+          </div>
+          <span class="home-option-arrow">›</span>
+        </button>
+
+        <button id="homeSalesBtn" class="home-option-card">
+          <div class="home-option-icon home-option-icon--sales">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+              <line x1="6"  y1="20" x2="6"  y2="14"/>
+            </svg>
+          </div>
+          <div class="home-option-body">
+            <div class="home-option-title" id="homeSalesBtnTitle">Sales</div>
+            <div class="home-option-sub"   id="homeSalesSub">View sales reports</div>
+          </div>
+          <span class="home-option-arrow">›</span>
+        </button>
+      </div>
+
+      <div class="home-footer">
+        <button id="homeLangBtn" class="ghost-btn lang-btn" aria-label="Switch language">中文</button>
+        <button id="homeLogoutBtn" class="home-logout-btn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          <span id="homeLogoutText">Sign Out</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
   <!-- ═══ LIST ═════════════════════════════════════════ -->
   <section id="listView" class="screen" hidden>
-
     <header class="topbar">
+      <button id="listHomeBtn" class="ghost-btn" aria-label="Home">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+      </button>
       <div class="topbar-brand">
         <div class="topbar-icon">
           <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
@@ -99,20 +157,12 @@
     </div>
 
     <ul id="itemsList" class="list"></ul>
-
-    <div id="loadMoreSpinner" class="load-more-spinner" hidden>
-      <span class="spinner"></span>
-    </div>
-
+    <div id="loadMoreSpinner" class="load-more-spinner" hidden><span class="spinner"></span></div>
     <div id="listSentinel"></div>
-
     <div id="skeleton" class="list" hidden>
-      <li class="skel-card"></li>
-      <li class="skel-card"></li>
-      <li class="skel-card"></li>
-      <li class="skel-card skel-card--sm"></li>
+      <li class="skel-card"></li><li class="skel-card"></li>
+      <li class="skel-card"></li><li class="skel-card skel-card--sm"></li>
     </div>
-
     <div id="listEmpty" class="empty" hidden>
       <svg viewBox="0 0 48 48" width="52" height="52" fill="none">
         <rect x="8" y="14" width="32" height="26" rx="3" stroke="currentColor" stroke-width="2" opacity=".25"/>
@@ -120,7 +170,7 @@
         <path d="M30 23a6 6 0 0 1-12 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".25"/>
       </svg>
       <p class="empty-title" id="listEmptyTitle">No items found</p>
-      <p class="empty-sub" id="listEmptySub">Try a different search or scan a barcode</p>
+      <p class="empty-sub"   id="listEmptySub">Try a different search or scan a barcode</p>
     </div>
 
     <button id="newBtn" class="fab" aria-label="Add new item">
@@ -141,25 +191,104 @@
       </button>
       <div class="topbar-center">
         <div id="editTitle" class="topbar-title">Edit Item</div>
-        <div id="editSub" class="topbar-meta"></div>
+        <div id="editSub"   class="topbar-meta"></div>
       </div>
       <div style="width:36px"></div>
     </header>
-
     <form id="editForm" novalidate>
       <div id="formFields" class="form-sections"></div>
       <div class="save-footer">
         <button id="cancelBtn" class="btn btn-full btn-lg" type="button">Cancel</button>
-        <button id="saveBtn" class="btn btn-primary btn-full btn-lg" type="submit">Save Changes</button>
+        <button id="saveBtn"   class="btn btn-primary btn-full btn-lg" type="submit">Save Changes</button>
       </div>
     </form>
+  </section>
+
+  <!-- ═══ SALES ════════════════════════════════════════ -->
+  <section id="salesView" class="screen" hidden>
+    <header class="topbar">
+      <button id="salesBackBtn" class="ghost-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="topbar-center">
+        <div id="salesViewTitle" class="topbar-title">Sales Dashboard</div>
+      </div>
+      <button id="salesLangBtn" class="ghost-btn lang-btn" aria-label="Switch language">中文</button>
+    </header>
+
+    <div class="range-tabs" id="salesRangeTabs">
+      <button class="range-tab active" data-range="today">Today</button>
+      <button class="range-tab" data-range="yesterday">Yesterday</button>
+      <button class="range-tab" data-range="week">This Week</button>
+      <button class="range-tab" data-range="month">This Month</button>
+      <button class="range-tab" data-range="monthly">Monthly</button>
+    </div>
+
+    <div id="salesLoading" class="sales-loading" hidden><span class="spinner"></span></div>
+
+    <div id="salesStats" class="sales-stats-grid" hidden>
+      <div class="stat-card stat-card--full">
+        <div class="stat-value" id="statRevenue">—</div>
+        <div class="stat-label" id="statRevenueLabel">Revenue</div>
+        <div class="stat-change" id="statRevenueChange"></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statTransCount">—</div>
+        <div class="stat-label" id="statTransLabel">Transactions</div>
+        <div class="stat-change" id="statTransChange"></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statItemsSold">—</div>
+        <div class="stat-label" id="statItemsSoldLabel">Items Sold</div>
+        <div class="stat-change" id="statItemsSoldChange"></div>
+      </div>
+      <div class="stat-card stat-card--full">
+        <div class="stat-value stat-value--sm" id="statAvg">—</div>
+        <div class="stat-label" id="statAvgLabel">Avg / Sale</div>
+      </div>
+    </div>
+
+    <div id="salesTrend" hidden>
+      <div class="form-section-title" id="salesTrendTitle">Revenue Trend</div>
+      <div class="form-group sales-trend-card">
+        <div class="trend-chart">
+          <div id="trendBars" class="trend-bars"></div>
+          <div id="trendLabels" class="trend-labels"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="salesMonthly" hidden>
+      <div class="form-section-title" id="salesMonthlyTitle">Monthly Sales</div>
+      <div class="form-group sales-monthly-card">
+        <div id="monthlyBars" class="monthly-bars"></div>
+      </div>
+    </div>
+
+    <div id="salesTrending" hidden>
+      <div class="form-section-title" id="salesTrendingTitle">Top Items</div>
+      <div class="form-group sales-trending-card">
+        <div id="trendingList"></div>
+        <button id="trendingMoreBtn" class="trending-more-btn" hidden>Show more</button>
+      </div>
+    </div>
+
+    <div id="salesEmpty" class="empty" hidden>
+      <svg viewBox="0 0 48 48" width="52" height="52" fill="none">
+        <line x1="12" y1="36" x2="12" y2="24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".25"/>
+        <line x1="24" y1="36" x2="24" y2="12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".25"/>
+        <line x1="36" y1="36" x2="36" y2="20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".25"/>
+      </svg>
+      <p class="empty-title" id="salesEmptyTitle">No sales data for this period</p>
+    </div>
   </section>
 
   <!-- ═══ SCANNER ═══════════════════════════════════════ -->
   <div id="scannerOverlay" class="scanner" hidden>
     <video id="scannerVideo" playsinline muted autoplay></video>
     <div class="scanner-shade"></div>
-
     <div class="scanner-header">
       <button id="scannerCloseBtn" class="scanner-pill-btn" aria-label="Close">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
@@ -173,15 +302,11 @@
         </svg>
       </button>
     </div>
-
     <div class="scan-box" id="scanBox">
-      <span class="scan-corner c-tl"></span>
-      <span class="scan-corner c-tr"></span>
-      <span class="scan-corner c-bl"></span>
-      <span class="scan-corner c-br"></span>
+      <span class="scan-corner c-tl"></span><span class="scan-corner c-tr"></span>
+      <span class="scan-corner c-bl"></span><span class="scan-corner c-br"></span>
       <div class="scan-laser"></div>
     </div>
-
     <div class="scanner-footer">
       <button id="scannerAltBtn" class="scanner-alt-btn">Enter barcode manually</button>
     </div>
