@@ -39,6 +39,19 @@
       scannerStart: 'Starting camera…', scannerReady: 'Point at a barcode',
       typeBarcodeManually: 'Enter barcode manually', typeManually: label => `Type ${label} manually`,
       enterBarcode: 'Enter barcode number:',
+      // Specials
+      homeSpecials: 'Specials', homeSpecialsSub: 'Manage discounts & offers',
+      specialsTitle: 'Specials', newSpecial: 'New Special', specialsNoData: 'No specials found',
+      spEditTitle: 'Edit Special', spNewTitle: 'New Special',
+      spSaveChanges: 'Save Changes', spCreateSpecial: 'Create Special',
+      spSecDetails: 'Details', spSecTarget: 'Target', spSecDiscount: 'Discount', spSecValidity: 'Validity',
+      spDescription: 'Description', spInActive: 'Inactive',
+      spProductField: 'Target Type', spProduct: 'Code',
+      spPriceType: 'Discount Type', spValue: 'Value', spCombQty: 'Buy Qty',
+      spFromDate: 'From', spToDate: 'Until', spDayOfWeek: 'Day',
+      spItemSpecials: 'Active Specials',
+      spStatusActive: 'Active', spStatusInactive: 'Inactive',
+      spStatusUpcoming: 'Upcoming', spStatusExpired: 'Expired',
       // Toasts & dialogs
       enterApiKey: 'Please enter your API key', signInFailed: 'Sign-in failed',
       itemCreated: 'Item created', noChanges: 'No changes',
@@ -80,6 +93,19 @@
       scannerStart: '启动相机中…', scannerReady: '对准条码',
       typeBarcodeManually: '手动输入条码', typeManually: label => `手动输入${label}`,
       enterBarcode: '请输入条码：',
+      // Specials
+      homeSpecials: '促销', homeSpecialsSub: '管理折扣与优惠',
+      specialsTitle: '促销管理', newSpecial: '新促销', specialsNoData: '暂无促销',
+      spEditTitle: '编辑促销', spNewTitle: '新建促销',
+      spSaveChanges: '保存更改', spCreateSpecial: '创建促销',
+      spSecDetails: '基本信息', spSecTarget: '适用目标', spSecDiscount: '折扣设置', spSecValidity: '有效期',
+      spDescription: '描述', spInActive: '停用',
+      spProductField: '目标类型', spProduct: '商品代码',
+      spPriceType: '折扣类型', spValue: '折扣值', spCombQty: '购买数量',
+      spFromDate: '开始', spToDate: '截止', spDayOfWeek: '适用日',
+      spItemSpecials: '当前促销',
+      spStatusActive: '有效', spStatusInactive: '已停用',
+      spStatusUpcoming: '未开始', spStatusExpired: '已过期',
       // Toasts & dialogs
       enterApiKey: '请输入API密钥', signInFailed: '登录失败',
       itemCreated: '商品已创建', noChanges: '无变更',
@@ -114,9 +140,11 @@
   const els = {
     loginView: $('loginView'), homeView: $('homeView'),
     listView:  $('listView'),  editView: $('editView'), salesView: $('salesView'),
+    specialsView: $('specialsView'), specialEditView: $('specialEditView'),
     apiKeyInput: $('apiKeyInput'), rememberMe: $('rememberMe'),
     loginBtn: $('loginBtn'),
-    homeInventoryBtn: $('homeInventoryBtn'), homeSalesBtn: $('homeSalesBtn'), homeLogoutBtn: $('homeLogoutBtn'),
+    homeInventoryBtn: $('homeInventoryBtn'), homeSalesBtn: $('homeSalesBtn'),
+    homeSpecialsBtn: $('homeSpecialsBtn'), homeLogoutBtn: $('homeLogoutBtn'),
     listHomeBtn: $('listHomeBtn'), logoutBtn: $('logoutBtn'),
     searchInput: $('searchInput'), searchClearBtn: $('searchClearBtn'), searchScanBtn: $('searchScanBtn'),
     newBtn: $('newBtn'), itemsList: $('itemsList'), skeleton: $('skeleton'),
@@ -131,6 +159,21 @@
     scannerOverlay: $('scannerOverlay'), scannerVideo: $('scannerVideo'),
     scannerStatus: $('scannerStatus'), scannerCloseBtn: $('scannerCloseBtn'),
     scannerTorchBtn: $('scannerTorchBtn'), scannerAltBtn: $('scannerAltBtn'),
+    // Specials list
+    specialsBackBtn: $('specialsBackBtn'), specialsList: $('specialsList'),
+    specialsSkeleton: $('specialsSkeleton'), specialsEmpty: $('specialsEmpty'),
+    specialsSentinel: $('specialsSentinel'), newSpecialBtn: $('newSpecialBtn'),
+    spSearchInput: $('spSearchInput'), spSearchClearBtn: $('spSearchClearBtn'),
+    // Special edit form
+    spBackBtn: $('spBackBtn'), spEditTitle: $('spEditTitle'), spEditSub: $('spEditSub'),
+    spSaveBtn: $('spSaveBtn'), spCancelBtn: $('spCancelBtn'), spEditForm: $('specialEditForm'),
+    spDescription: $('spDescription'), spInActive: $('spInActive'),
+    spProductField: $('spProductField'), spProduct: $('spProduct'),
+    spPriceType: $('spPriceType'), spValue: $('spValue'), spCombQty: $('spCombQty'),
+    spFromDate: $('spFromDate'), spToDate: $('spToDate'), spDayOfWeek: $('spDayOfWeek'),
+    // Item specials (Option B)
+    itemSpecialsSection: $('itemSpecialsSection'), itemSpecialsList: $('itemSpecialsList'),
+    itemAddSpecialBtn: $('itemAddSpecialBtn'),
   };
 
   /* ── State ────────────────────────────────────── */
@@ -146,6 +189,16 @@
   let trendingOffset     = 0;
   let trendingCurRange   = 'today';
   const TRENDING_PAGE    = 5;
+
+  // Specials state
+  let curSpecial      = null;
+  let specialMode     = 'edit';
+  let specialNavSrc   = 'list';
+  let spOffset        = 0;
+  let spAllLoaded     = false;
+  let spLoading       = false;
+  let spSearch        = '';
+  const SP_PAGE       = 20;
 
   const FORM_SECTIONS = [
     { titleKey: 'sectionIdentification', cols: ['UPC', 'SKU', 'Description'] },
@@ -218,6 +271,38 @@
       formDirty = wasDirty;
     }
 
+    // Specials
+    $('homeSpecialsBtnTitle').textContent = t('homeSpecials');
+    $('homeSpecialsSub').textContent      = t('homeSpecialsSub');
+    $('specialsTopbarName').textContent   = t('specialsTitle');
+    $('specialsEmptyTitle').textContent   = t('specialsNoData');
+    $('newSpecialBtnText').textContent    = t('newSpecial');
+    $('spSecDetails').textContent         = t('spSecDetails');
+    $('spSecTarget').textContent          = t('spSecTarget');
+    $('spSecDiscount').textContent        = t('spSecDiscount');
+    $('spSecValidity').textContent        = t('spSecValidity');
+    $('spDescLabel').textContent          = t('spDescription');
+    $('spInActiveLabel').textContent      = t('spInActive');
+    $('spProductFieldLabel').textContent  = t('spProductField');
+    $('spProductLabel').textContent       = t('spProduct');
+    $('spPriceTypeLabel').textContent     = t('spPriceType');
+    $('spValueLabel').textContent         = t('spValue');
+    $('spCombQtyLabel').textContent       = t('spCombQty');
+    $('spFromDateLabel').textContent      = t('spFromDate');
+    $('spToDateLabel').textContent        = t('spToDate');
+    $('spDayLabel').textContent           = t('spDayOfWeek');
+    $('itemSpecialsSectionTitle').textContent = t('spItemSpecials');
+    if (!els.specialEditView.hidden) {
+      if (specialMode === 'new') {
+        els.spEditTitle.textContent = t('spNewTitle');
+        if (!els.spSaveBtn.disabled) els.spSaveBtn.textContent = t('spCreateSpecial');
+      } else {
+        els.spEditTitle.textContent = t('spEditTitle');
+        if (!els.spSaveBtn.disabled) els.spSaveBtn.textContent = t('spSaveChanges');
+      }
+    }
+    els.spCancelBtn.textContent = t('cancel');
+
     if (!els.salesView.hidden) loadSales(currentSalesRange);
   }
 
@@ -231,11 +316,13 @@
 
   /* ── View switching ───────────────────────────── */
   function showView(name) {
-    els.loginView.hidden = name !== 'login';
-    els.homeView.hidden  = name !== 'home';
-    els.listView.hidden  = name !== 'list';
-    els.editView.hidden  = name !== 'edit';
-    els.salesView.hidden = name !== 'sales';
+    els.loginView.hidden      = name !== 'login';
+    els.homeView.hidden       = name !== 'home';
+    els.listView.hidden       = name !== 'list';
+    els.editView.hidden       = name !== 'edit';
+    els.salesView.hidden      = name !== 'sales';
+    els.specialsView.hidden   = name !== 'specials';
+    els.specialEditView.hidden = name !== 'specialEdit';
   }
 
   /* ── Toast ────────────────────────────────────── */
@@ -312,8 +399,33 @@
   els.homeSalesBtn.addEventListener('click', () => {
     showView('sales'); loadSales('today');
   });
+  els.homeSpecialsBtn.addEventListener('click', () => {
+    spSearch = ''; els.spSearchInput.value = ''; els.spSearchClearBtn.hidden = true;
+    showView('specials'); loadSpecials(true);
+  });
   els.listHomeBtn.addEventListener('click', () => showView('home'));
   els.salesBackBtn.addEventListener('click', () => showView('home'));
+  els.specialsBackBtn.addEventListener('click', () => { showView('home'); });
+  els.newSpecialBtn.addEventListener('click', () => openSpecialNew());
+  els.spBackBtn.addEventListener('click', () => {
+    showView(specialNavSrc === 'edit' ? 'edit' : 'specials');
+  });
+  els.spCancelBtn.addEventListener('click', () => {
+    showView(specialNavSrc === 'edit' ? 'edit' : 'specials');
+  });
+
+  // Specials search
+  let spSearchTimer = null;
+  els.spSearchInput.addEventListener('input', () => {
+    const v = els.spSearchInput.value;
+    els.spSearchClearBtn.hidden = !v.length;
+    clearTimeout(spSearchTimer);
+    spSearchTimer = setTimeout(() => { spSearch = v.trim(); loadSpecials(true); }, 260);
+  });
+  els.spSearchClearBtn.addEventListener('click', () => {
+    els.spSearchInput.value = ''; els.spSearchClearBtn.hidden = true;
+    spSearch = ''; loadSpecials(true); els.spSearchInput.focus();
+  });
 
   /* ── Pagination state ────────────────────────── */
   const PAGE_SIZE = 50;
@@ -556,7 +668,7 @@
     }
     const slots  = buildSlots(range, revMap, soldMap);
     const maxRev = Math.max(...slots.map(s => s.revenue), 0.01);
-    const MAX_PX = 80;
+    const MAX_PX = window.innerWidth >= 1024 ? 120 : 80;
 
     const barsEl   = $('trendBars');
     const labelsEl = $('trendLabels');
@@ -787,6 +899,7 @@
   async function openEdit(upc) {
     mode = 'edit'; curItem = null; clearFields();
     els.editTitle.textContent = t('editTitle'); els.editSub.textContent = upc; els.saveBtn.textContent = t('saveChanges');
+    els.itemSpecialsSection.hidden = true; els.itemSpecialsList.innerHTML = '';
     showView('edit'); window.scrollTo({ top: 0, behavior: 'instant' });
     try {
       const item = await api(`/api/items/${encodeURIComponent(upc)}`);
@@ -795,6 +908,7 @@
       formDirty = false;
       if (item.Updated) { const d = new Date(item.Updated); if (!isNaN(d)) els.editSub.textContent = `${upc}  ·  ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; }
     } catch (err) { toast(err.message, 'error'); }
+    loadItemSpecials(upc);
   }
 
   /* ── Save ─────────────────────────────────────── */
@@ -941,6 +1055,292 @@
       els.scannerStatus.textContent = err.message || t('lookupFailed');
       setTimeout(() => { if (!scanActive) { scanActive = true; runScanLoop(); } els.scannerStatus.textContent = t('scannerReady'); }, 1500);
     }
+  }
+
+  /* ── Specials helpers ─────────────────────────── */
+  function specialStatus(sp) {
+    if (sp.InActive) return 'inactive';
+    const now  = new Date();
+    const from = sp.FromDate ? new Date(sp.FromDate) : null;
+    const to   = sp.ToDate   ? new Date(sp.ToDate)   : null;
+    if (from && from > now) return 'upcoming';
+    if (to   && to   < now) return 'expired';
+    return 'active';
+  }
+
+  function fmtDiscount(sp) {
+    const v = Number(sp.Value);
+    if (sp.PriceType === 'P') return `${v}% off`;
+    if (sp.PriceType === 'N') return fmt$(v);
+    return `${fmt$(v)} off`;
+  }
+
+  function fmtTarget(sp) {
+    if (!sp.ProductField || !sp.Product) return '';
+    const labels = { U: 'UPC', S: 'SKU', D: 'Dept' };
+    return `${labels[sp.ProductField] || sp.ProductField}: ${sp.Product}`;
+  }
+
+  function spDateFmt(val) {
+    if (!val) return '';
+    const d = new Date(val);
+    if (isNaN(d)) return '';
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  }
+
+  /* ── Specials list ─────────────────────────────── */
+  function calcFinalPrice(sp) {
+    const itemPrice = Number(sp.ItemPrice);
+    const val       = Number(sp.Value);
+    if (!sp.ItemPrice || isNaN(itemPrice) || isNaN(val)) return null;
+    if (sp.PriceType === 'P') return Math.max(0, itemPrice * (1 - val / 100));
+    if (sp.PriceType === 'D') return Math.max(0, itemPrice - val);
+    if (sp.PriceType === 'N') return val;
+    return null;
+  }
+
+  function buildSpecialCard(sp) {
+    const li = document.createElement('li');
+    const status = specialStatus(sp);
+    li.className = `sp-card sp-card--${status}`;
+    li.setAttribute('role', 'button'); li.tabIndex = 0;
+
+    // Left accent bar
+    const accent = document.createElement('div'); accent.className = 'sp-card-accent';
+
+    // Body
+    const body = document.createElement('div'); body.className = 'sp-card-body';
+
+    // Row 1: name + status pill
+    const row1 = document.createElement('div'); row1.className = 'sp-card-row1';
+    const name = document.createElement('div'); name.className = 'sp-card-name';
+    name.textContent = sp.Description || `Special #${sp.ID}`;
+    const pill = document.createElement('span');
+    pill.className = `sp-status-pill sp-status--${status}`;
+    pill.textContent = t(`spStatus${status.charAt(0).toUpperCase() + status.slice(1)}`);
+    row1.append(name, pill);
+
+    // Row 2: price breakdown (orig → final · discount label)
+    const finalPrice = calcFinalPrice(sp);
+    const priceRow = document.createElement('div');
+    priceRow.className = 'sp-card-price-row';
+    if (sp.PriceType === 'N') priceRow.classList.add('sp-card-new-price');
+
+    if (finalPrice !== null && sp.ItemPrice != null && sp.PriceType !== 'N') {
+      const orig  = document.createElement('span'); orig.className = 'sp-card-orig';
+      orig.textContent = fmt$(sp.ItemPrice);
+      const arr   = document.createElement('span'); arr.className = 'sp-card-arrow';
+      arr.textContent = '→';
+      const final = document.createElement('span'); final.className = 'sp-card-final';
+      final.textContent = fmt$(finalPrice);
+      const lbl   = document.createElement('span'); lbl.className = 'sp-card-discount';
+      lbl.textContent = `(${fmtDiscount(sp)})`;
+      priceRow.append(orig, arr, final, lbl);
+    } else if (finalPrice !== null && sp.PriceType === 'N') {
+      const orig  = document.createElement('span'); orig.className = 'sp-card-orig';
+      orig.textContent = fmt$(sp.ItemPrice);
+      const arr   = document.createElement('span'); arr.className = 'sp-card-arrow';
+      arr.textContent = '→';
+      const final = document.createElement('span'); final.className = 'sp-card-final';
+      final.textContent = fmt$(finalPrice);
+      priceRow.append(orig, arr, final);
+    } else {
+      // No item price available — show discount label only
+      const disc = document.createElement('span'); disc.className = 'sp-card-final';
+      disc.textContent = fmtDiscount(sp);
+      priceRow.appendChild(disc);
+    }
+
+    // Row 3: target + buy qty
+    const row3 = document.createElement('div'); row3.className = 'sp-card-row2';
+    const target = document.createElement('div'); target.className = 'sp-card-target';
+    const targetParts = [];
+    if (sp.CombQty && Number(sp.CombQty) > 1) targetParts.push(`Buy ${sp.CombQty}`);
+    const fmtTgt = fmtTarget(sp);
+    if (fmtTgt) targetParts.push(fmtTgt);
+    target.textContent = targetParts.join('  ·  ') || '—';
+    row3.appendChild(target);
+
+    body.append(row1, priceRow, row3);
+
+    // Date range (only if set)
+    if (sp.FromDate || sp.ToDate) {
+      const dates = document.createElement('div'); dates.className = 'sp-card-dates';
+      const from = sp.FromDate ? spDateFmt(sp.FromDate) : '…';
+      const to   = sp.ToDate   ? spDateFmt(sp.ToDate)   : '…';
+      dates.textContent = sp.FromDate && sp.ToDate ? `${from} → ${to}` : sp.FromDate ? `From ${from}` : `Until ${to}`;
+      body.appendChild(dates);
+    }
+
+    li.append(accent, body);
+    li.addEventListener('click', () => openSpecialEdit(sp.ID, 'list'));
+    li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openSpecialEdit(sp.ID, 'list'); });
+    return li;
+  }
+
+  async function loadSpecials(reset = true) {
+    if (reset) {
+      spOffset = 0; spAllLoaded = false; spLoading = false;
+      els.specialsList.innerHTML = '';
+      els.specialsEmpty.hidden  = true;
+      els.specialsSkeleton.hidden = false;
+    }
+    if (spLoading || spAllLoaded) return;
+    spLoading = true;
+    try {
+      const q = spSearch ? `&search=${encodeURIComponent(spSearch)}` : '';
+      const data = await api(`/api/specials?limit=${SP_PAGE}&offset=${spOffset}${q}`);
+      els.specialsSkeleton.hidden = true;
+      if (data.length < SP_PAGE) spAllLoaded = true;
+      spOffset += data.length;
+      if (spOffset === 0) {
+        els.specialsEmpty.hidden = false;
+      } else {
+        const frag = document.createDocumentFragment();
+        for (const sp of data) frag.appendChild(buildSpecialCard(sp));
+        els.specialsList.appendChild(frag);
+      }
+      $('specialCount').textContent = spAllLoaded ? String(spOffset) : `${spOffset}+`;
+    } catch (err) {
+      els.specialsSkeleton.hidden = true;
+      toast(err.message, 'error');
+    }
+    spLoading = false;
+  }
+
+  const spSentinelObserver = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting && !els.specialsView.hidden) loadSpecials(false);
+  }, { rootMargin: '120px' });
+  spSentinelObserver.observe(els.specialsSentinel);
+
+  /* ── Special edit form ────────────────────────── */
+  function fillSpecialForm(sp) {
+    const p = n => String(n).padStart(2, '0');
+    function toLocalInput(val) {
+      if (!val) return '';
+      const d = new Date(val);
+      if (isNaN(d)) return '';
+      return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+    els.spDescription.value  = sp.Description  || '';
+    els.spInActive.checked   = !!sp.InActive;
+    els.spProductField.value = sp.ProductField  || 'U';
+    els.spProduct.value      = sp.Product       || '';
+    els.spPriceType.value    = sp.PriceType     || 'D';
+    els.spValue.value        = sp.Value != null  ? String(sp.Value) : '';
+    els.spCombQty.value      = sp.CombQty != null ? String(sp.CombQty) : '';
+    els.spFromDate.value     = toLocalInput(sp.FromDate);
+    els.spToDate.value       = toLocalInput(sp.ToDate);
+    els.spDayOfWeek.value    = sp.DayOfWeek != null ? String(sp.DayOfWeek) : '0';
+  }
+
+  function readSpecialForm() {
+    function localToISO(val) {
+      if (!val) return null;
+      const d = new Date(val);
+      return isNaN(d) ? null : d.toISOString();
+    }
+    return {
+      Description:  els.spDescription.value.trim() || null,
+      InActive:     els.spInActive.checked ? 1 : 0,
+      ProductField: els.spProductField.value || 'U',
+      Product:      els.spProduct.value.trim() || null,
+      PriceType:    els.spPriceType.value || 'D',
+      Value:        els.spValue.value !== '' ? Number(els.spValue.value) : null,
+      CombQty:      els.spCombQty.value !== '' ? Number(els.spCombQty.value) : null,
+      FromDate:     localToISO(els.spFromDate.value),
+      ToDate:       localToISO(els.spToDate.value),
+      DayOfWeek:    Number(els.spDayOfWeek.value) || 0,
+    };
+  }
+
+  async function openSpecialEdit(id, source = 'list') {
+    specialMode = 'edit'; specialNavSrc = source; curSpecial = null;
+    els.spEditTitle.textContent = t('spEditTitle'); els.spEditSub.textContent = '';
+    els.spSaveBtn.textContent   = t('spSaveChanges');
+    showView('specialEdit'); window.scrollTo({ top: 0, behavior: 'instant' });
+    try {
+      const sp = await api(`/api/specials/${id}`);
+      curSpecial = sp;
+      fillSpecialForm(sp);
+      els.spEditSub.textContent = sp.Description || `#${sp.ID}`;
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
+  function openSpecialNew(prefillUPC = '') {
+    specialMode = 'new'; specialNavSrc = 'list'; curSpecial = null;
+    els.spEditTitle.textContent = t('spNewTitle'); els.spEditSub.textContent = '';
+    els.spSaveBtn.textContent   = t('spCreateSpecial');
+    fillSpecialForm({ ProductField: 'U', PriceType: 'D', InActive: 0, DayOfWeek: 0, Product: prefillUPC });
+    showView('specialEdit'); window.scrollTo({ top: 0, behavior: 'instant' });
+    setTimeout(() => els.spDescription.focus(), 80);
+  }
+
+  els.spEditForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const orig = els.spSaveBtn.textContent;
+    els.spSaveBtn.disabled = true; els.spSaveBtn.textContent = t('saving');
+    try {
+      const payload = readSpecialForm();
+      if (specialMode === 'new') {
+        await api('/api/specials', { method: 'POST', body: JSON.stringify(payload) });
+        toast(t('itemCreated'), 'success');
+        showView('specials');
+        loadSpecials(true);
+      } else {
+        await api(`/api/specials/${curSpecial.ID}`, { method: 'PUT', body: JSON.stringify(payload) });
+        curSpecial = { ...curSpecial, ...payload };
+        toast(t('savedN', 1), 'success');
+        showView(specialNavSrc === 'edit' ? 'edit' : 'specials');
+        if (specialNavSrc !== 'edit') loadSpecials(true);
+      }
+    } catch (err) { toast(err.message, 'error'); }
+    finally { els.spSaveBtn.disabled = false; els.spSaveBtn.textContent = orig; }
+  });
+
+  /* ── Item specials (Option B) ─────────────────── */
+  async function loadItemSpecials(upc) {
+    els.itemSpecialsList.innerHTML = '';
+    els.itemSpecialsSection.hidden = false;
+
+    // wire "+ Add" button in section header
+    els.itemAddSpecialBtn.onclick = () => openSpecialNew(upc);
+
+    try {
+      const data = await api(`/api/items/${encodeURIComponent(upc)}/specials`);
+      if (!data || !data.length) {
+        // Empty state — show inline add prompt
+        const empty = document.createElement('div'); empty.className = 'sp-item-empty';
+        const txt = document.createElement('span'); txt.className = 'sp-item-empty-text';
+        txt.textContent = 'No active specials for this item';
+        const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'sp-item-add-btn';
+        addBtn.textContent = '+ Add Special';
+        addBtn.addEventListener('click', () => openSpecialNew(upc));
+        empty.append(txt, addBtn);
+        els.itemSpecialsList.appendChild(empty);
+        return;
+      }
+      for (const sp of data) {
+        const card = document.createElement('div'); card.className = 'item-special-card';
+        const row  = document.createElement('div'); row.className = 'item-special-row';
+        const info = document.createElement('div'); info.className = 'item-special-info';
+        const nm   = document.createElement('div'); nm.className = 'item-special-name';
+        nm.textContent = sp.Description || `Special #${sp.ID}`;
+        const det  = document.createElement('div'); det.className = 'item-special-detail';
+        const fp = calcFinalPrice(sp);
+        det.textContent = fp != null
+          ? `${fmt$(sp.Price1 ?? sp.ItemPrice)} → ${fmt$(fp)}`
+          : fmtDiscount(sp);
+        if (sp.ToDate) det.textContent += `  ·  until ${spDateFmt(sp.ToDate)}`;
+        info.append(nm, det);
+        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'item-special-edit-btn';
+        btn.textContent = 'Edit';
+        btn.addEventListener('click', () => openSpecialEdit(sp.ID, 'edit'));
+        row.append(info, btn); card.appendChild(row);
+        els.itemSpecialsList.appendChild(card);
+      }
+    } catch { els.itemSpecialsSection.hidden = true; }
   }
 
   /* ── Init ─────────────────────────────────────── */

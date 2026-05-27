@@ -475,6 +475,164 @@ app.get('/api/sales/trending', requireApiKey, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ---- Specials routes ----
+
+const SPECIAL_COLS = {
+  Description:  { sql: 'VarChar',  len: 30 },
+  FromDate:     { sql: 'DateTime'           },
+  ToDate:       { sql: 'DateTime'           },
+  Product:      { sql: 'VarChar',  len: 20 },
+  ProductField: { sql: 'Char',     len: 1  },
+  PriceType:    { sql: 'Char',     len: 1  },
+  Value:        { sql: 'Money'              },
+  CombQty:      { sql: 'Money'              },
+  CombType:     { sql: 'Char',     len: 1  },
+  DayOfWeek:    { sql: 'TinyInt'            },
+  InActive:     { sql: 'Bit'                },
+};
+
+function spSqlType(col) {
+  const d = SPECIAL_COLS[col]; if (!d) throw new Error(`Unknown special col ${col}`);
+  switch (d.sql) {
+    case 'VarChar':  return sql.VarChar(d.len);
+    case 'Char':     return sql.Char(d.len);
+    case 'Money':    return sql.Money;
+    case 'TinyInt':  return sql.TinyInt;
+    case 'Bit':      return sql.Bit;
+    case 'DateTime': return sql.DateTime;
+    default: throw new Error(`No SQL type for ${col}`);
+  }
+}
+
+function coerceSp(col, raw) {
+  const d = SPECIAL_COLS[col]; if (!d) return { error: `Unknown field ${col}` };
+  if (raw === null || raw === '' || raw === undefined) return { value: null };
+  switch (d.sql) {
+    case 'VarChar': case 'Char': {
+      const v = String(raw);
+      return d.len && v.length > d.len ? { error: `${col} too long (max ${d.len})` } : { value: v };
+    }
+    case 'Money': { const n = Number(raw); return isNaN(n) ? { error: `${col} must be a number` } : { value: n }; }
+    case 'TinyInt': { const n = parseInt(raw, 10); return isNaN(n) ? { error: `${col} must be integer` } : { value: n }; }
+    case 'Bit': return { value: raw === true || raw === 1 || raw === '1' || raw === 'true' };
+    case 'DateTime': { const dt = new Date(raw); return isNaN(dt) ? { error: `${col} invalid date` } : { value: dt }; }
+    default: return { error: `Unsupported type for ${col}` };
+  }
+}
+
+function validateSpBody(body) {
+  const values = {}, errors = [];
+  for (const col of Object.keys(body)) {
+    if (!SPECIAL_COLS[col]) continue;
+    const { value, error } = coerceSp(col, body[col]);
+    if (error) errors.push(error); else values[col] = value;
+  }
+  return { values, errors };
+}
+
+// List specials (paginated, active-first)
+app.get('/api/specials', requireApiKey, async (req, res) => {
+  try {
+    const search = (req.query.search || '').trim();
+    const limit  = Math.min(parseInt(req.query.limit,  10) || 50, 200);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0,  0);
+    const pool   = await getPool();
+    const request = pool.request();
+    let where = '';
+    if (search) {
+      request.input('s', sql.VarChar, `%${search}%`);
+      where = `WHERE Description LIKE @s OR Product LIKE @s`;
+    }
+    const rowFrom = offset + 1, rowTo = offset + limit;
+    const r = await request.query(`
+      WITH P AS (
+        SELECT s.ID, s.Description, s.FromDate, s.ToDate, s.Product, s.ProductField,
+               s.PriceType, s.Value, s.CombQty, s.DayOfWeek, s.InActive,
+               CASE WHEN s.ProductField = 'U' THEN iu.Price1
+                    WHEN s.ProductField = 'S' THEN isk.Price1
+                    ELSE NULL END AS ItemPrice,
+               ROW_NUMBER() OVER (ORDER BY s.InActive ASC, ISNULL(s.FromDate,'1900-01-01') ASC, s.ID ASC) AS _rn
+        FROM AKPOS.dbo.Specials s
+        LEFT JOIN AKPOS.dbo.Items iu  ON s.ProductField = 'U' AND iu.UPC = s.Product
+        LEFT JOIN AKPOS.dbo.Items isk ON s.ProductField = 'S' AND isk.SKU = s.Product
+        ${where ? where.replace('Description', 's.Description').replace('Product', 's.Product') : ''}
+      )
+      SELECT ID, Description, FromDate, ToDate, Product, ProductField,
+             PriceType, Value, CombQty, DayOfWeek, InActive, ItemPrice
+      FROM P WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
+    `);
+    res.json(r.recordset);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Full row for the edit form
+app.get('/api/specials/:id', requireApiKey, async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('id', sql.Int, parseInt(req.params.id, 10))
+      .query(`SELECT * FROM AKPOS.dbo.Specials WHERE ID = @id`);
+    if (!r.recordset.length) return res.status(404).json({ error: 'Special not found' });
+    res.json(r.recordset[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Create special (auto-incrementing ID)
+app.post('/api/specials', requireApiKey, async (req, res) => {
+  const { values, errors } = validateSpBody(req.body);
+  if (!values.Description) errors.push('Description is required');
+  if (values.Value === undefined || values.Value === null) errors.push('Value is required');
+  if (!values.PriceType) errors.push('PriceType is required');
+  if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+  try {
+    const pool  = await getPool();
+    const idRes = await pool.request().query(`SELECT ISNULL(MAX(ID),0)+1 AS NextID FROM AKPOS.dbo.Specials`);
+    const newId = idRes.recordset[0].NextID;
+    const cols  = ['ID', ...Object.keys(values), 'Updated'];
+    const req2  = pool.request().input('id', sql.Int, newId);
+    for (const [c, v] of Object.entries(values)) req2.input(c, spSqlType(c), v);
+    const ph = ['@id', ...Object.keys(values).map(c => `@${c}`), 'GETDATE()'];
+    await req2.query(`INSERT INTO AKPOS.dbo.Specials (${cols.join(',')}) VALUES (${ph.join(',')})`);
+    res.status(201).json({ ok: true, id: newId });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Update special (PATCH semantics)
+app.put('/api/specials/:id', requireApiKey, async (req, res) => {
+  const { values, errors } = validateSpBody(req.body);
+  if (errors.length) return res.status(400).json({ error: errors.join('; ') });
+  const cols = Object.keys(values);
+  if (!cols.length) return res.status(400).json({ error: 'No fields provided' });
+  try {
+    const pool = await getPool();
+    const req2 = pool.request().input('id', sql.Int, parseInt(req.params.id, 10));
+    for (const [c, v] of Object.entries(values)) req2.input(c, spSqlType(c), v);
+    const set = [...cols.map(c => `${c} = @${c}`), 'Updated = GETDATE()'];
+    const r = await req2.query(`UPDATE AKPOS.dbo.Specials SET ${set.join(', ')} WHERE ID = @id`);
+    if (!r.rowsAffected[0]) return res.status(404).json({ error: 'Special not found' });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Option B — active specials matching a specific item UPC
+app.get('/api/items/:upc/specials', requireApiKey, async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('upc', sql.VarChar(20), req.params.upc)
+      .query(`
+        SELECT ID, Description, PriceType, Value, CombQty, CombType, FromDate, ToDate, DayOfWeek
+        FROM AKPOS.dbo.Specials
+        WHERE ProductField = 'U' AND Product = @upc
+          AND InActive = 0
+          AND (FromDate IS NULL OR FromDate <= GETDATE())
+          AND (ToDate   IS NULL OR ToDate   >= GETDATE())
+        ORDER BY Value DESC
+      `);
+    res.json(r.recordset);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ---- HTTPS bootstrap (camera needs a secure context) ----
 function loadOrCreateCert() {
   const dir = path.join(__dirname, 'certs');

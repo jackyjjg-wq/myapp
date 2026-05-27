@@ -90,6 +90,20 @@
           </div>
           <span class="home-option-arrow">›</span>
         </button>
+
+        <button id="homeSpecialsBtn" class="home-option-card">
+          <div class="home-option-icon home-option-icon--specials">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+              <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+          </div>
+          <div class="home-option-body">
+            <div class="home-option-title" id="homeSpecialsBtnTitle">Specials</div>
+            <div class="home-option-sub"   id="homeSpecialsSub">Manage discounts &amp; offers</div>
+          </div>
+          <span class="home-option-arrow">›</span>
+        </button>
       </div>
 
       <div class="home-footer">
@@ -197,6 +211,15 @@
     </header>
     <form id="editForm" novalidate>
       <div id="formFields" class="form-sections"></div>
+
+      <div id="itemSpecialsSection" hidden>
+        <div class="form-section-title sp-item-hdr">
+          <span id="itemSpecialsSectionTitle">Active Specials</span>
+          <button id="itemAddSpecialBtn" type="button" class="sp-add-inline-btn">+ Add</button>
+        </div>
+        <div id="itemSpecialsList" class="form-group"></div>
+      </div>
+
       <div class="save-footer">
         <button id="cancelBtn" class="btn btn-full btn-lg" type="button">Cancel</button>
         <button id="saveBtn"   class="btn btn-primary btn-full btn-lg" type="submit">Save Changes</button>
@@ -283,6 +306,157 @@
       </svg>
       <p class="empty-title" id="salesEmptyTitle">No sales data for this period</p>
     </div>
+  </section>
+
+  <!-- ═══ SPECIALS LIST ══════════════════════════════════ -->
+  <section id="specialsView" class="screen" hidden>
+    <header class="topbar">
+      <button id="specialsBackBtn" class="ghost-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="topbar-brand">
+        <div class="topbar-icon" style="background:linear-gradient(145deg,#f59e0b,#f97316)">
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.5 11.17l-6 6a1.67 1.67 0 0 1-2.36 0L2 10V2h8l7.5 7.5a1.67 1.67 0 0 1 0 2.36z"/>
+            <circle cx="6.25" cy="6.25" r=".83" fill="white"/>
+          </svg>
+        </div>
+        <span class="topbar-name" id="specialsTopbarName">Specials</span>
+        <span id="specialCount" class="item-count-badge">—</span>
+      </div>
+      <button id="specialsLangBtn" class="ghost-btn lang-btn" aria-label="Switch language">中文</button>
+    </header>
+
+    <div class="search-row">
+      <div class="search-field">
+        <svg class="search-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input id="spSearchInput" type="search" placeholder="Search specials…" autocomplete="off" enterkeyhint="search" />
+        <button id="spSearchClearBtn" class="clear-btn" hidden aria-label="Clear">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <ul id="specialsList" class="list"></ul>
+    <div id="specialsSkeleton" class="list" hidden>
+      <li class="skel-card"></li><li class="skel-card"></li><li class="skel-card skel-card--sm"></li>
+    </div>
+    <div id="specialsEmpty" class="empty" hidden>
+      <p class="empty-title" id="specialsEmptyTitle">No specials found</p>
+    </div>
+    <div id="specialsSentinel"></div>
+
+    <button id="newSpecialBtn" class="fab" aria-label="Add new special">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      <span id="newSpecialBtnText">New Special</span>
+    </button>
+  </section>
+
+  <!-- ═══ SPECIAL EDIT ═════════════════════════════════ -->
+  <section id="specialEditView" class="screen" hidden>
+    <header class="topbar">
+      <button id="spBackBtn" class="ghost-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="topbar-center">
+        <div id="spEditTitle" class="topbar-title">Edit Special</div>
+        <div id="spEditSub"   class="topbar-meta"></div>
+      </div>
+      <div style="width:36px"></div>
+    </header>
+
+    <form id="specialEditForm" novalidate>
+      <div class="form-section-title" id="spSecDetails">Details</div>
+      <div class="form-group">
+        <div class="form-row">
+          <span class="field-label" id="spDescLabel">Description</span>
+          <input id="spDescription" type="text" maxlength="30" required />
+        </div>
+        <div class="form-row">
+          <label class="toggle-row">
+            <span class="toggle-label" id="spInActiveLabel">Inactive</span>
+            <input id="spInActive" type="checkbox" />
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-section-title" id="spSecTarget">Target</div>
+      <div class="form-group">
+        <div class="form-row">
+          <span class="field-label" id="spProductFieldLabel">Target Type</span>
+          <select id="spProductField" class="field-select">
+            <option value="U">UPC / Barcode</option>
+            <option value="S">SKU</option>
+            <option value="D">Department</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <span class="field-label" id="spProductLabel">Code</span>
+          <input id="spProduct" type="text" maxlength="20" />
+        </div>
+      </div>
+
+      <div class="form-section-title" id="spSecDiscount">Discount</div>
+      <div class="form-group">
+        <div class="form-row">
+          <span class="field-label" id="spPriceTypeLabel">Discount Type</span>
+          <select id="spPriceType" class="field-select">
+            <option value="D">$ Off</option>
+            <option value="P">% Off</option>
+            <option value="N">New Price</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <span class="field-label" id="spValueLabel">Value *</span>
+          <input id="spValue" type="number" step="0.01" min="0" required />
+        </div>
+        <div class="form-row">
+          <span class="field-label" id="spCombQtyLabel">Buy Quantity</span>
+          <input id="spCombQty" type="number" step="1" min="0" placeholder="—" />
+        </div>
+      </div>
+
+      <div class="form-section-title" id="spSecValidity">Validity</div>
+      <div class="form-group">
+        <div class="form-row">
+          <span class="field-label" id="spFromDateLabel">From</span>
+          <input id="spFromDate" type="datetime-local" />
+        </div>
+        <div class="form-row">
+          <span class="field-label" id="spToDateLabel">Until</span>
+          <input id="spToDate" type="datetime-local" />
+        </div>
+        <div class="form-row">
+          <span class="field-label" id="spDayLabel">Day</span>
+          <select id="spDayOfWeek" class="field-select">
+            <option value="0">Every day</option>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+            <option value="7">Sunday</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="save-footer">
+        <button id="spCancelBtn" class="btn btn-full btn-lg" type="button">Cancel</button>
+        <button id="spSaveBtn"   class="btn btn-primary btn-full btn-lg" type="submit">Save Changes</button>
+      </div>
+    </form>
   </section>
 
   <!-- ═══ SCANNER ═══════════════════════════════════════ -->
