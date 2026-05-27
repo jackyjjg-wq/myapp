@@ -16,7 +16,10 @@
       "Read(//tmp/**)",
       "Bash(curl -s -H \"X-API-Key: A\" \"http://localhost:3000/api/sales/summary?range=today\")",
       "Bash(curl -s -H \"X-API-Key: A\" \"http://localhost:3000/api/sales/monthly\")",
-      "Bash(curl -s -H \"X-API-Key: A\" \"http://localhost:3000/api/health\")"
+      "Bash(curl -s -H \"X-API-Key: A\" \"http://localhost:3000/api/health\")",
+      "PowerShell(Get-Process -Name node -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force)",
+      "PowerShell(Start-Process -NoNewWindow -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"C:\\\\Users\\\\jacky\\\\OneDrive\\\\??\\\\MYAPP\")"
     ]
   }
 }

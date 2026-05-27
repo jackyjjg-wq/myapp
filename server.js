@@ -297,6 +297,16 @@ app.put('/api/items/:upc', requireApiKey, async (req, res) => {
 
 // ---- Sales routes ----
 
+// mssql sends DateTime params as their UTC value, but AKPOS stores Logged in
+// local time (no timezone). This converts a local-time Date to a UTC Date whose
+// byte value matches the local time, so SQL Server receives the correct value.
+function toSqlDate(d) {
+  return new Date(Date.UTC(
+    d.getFullYear(), d.getMonth(), d.getDate(),
+    d.getHours(), d.getMinutes(), d.getSeconds()
+  ));
+}
+
 function salesDateRange(range) {
   const now = new Date();
   const tod = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -322,9 +332,9 @@ app.get('/api/sales/summary', requireApiKey, async (req, res) => {
     const pool = await getPool();
     const [r, rSold] = await Promise.all([
       pool.request()
-        .input('from',     sql.DateTime, from)
-        .input('to',       sql.DateTime, to)
-        .input('prevFrom', sql.DateTime, prevFrom)
+        .input('from',     sql.DateTime, toSqlDate(from))
+        .input('to',       sql.DateTime, toSqlDate(to))
+        .input('prevFrom', sql.DateTime, toSqlDate(prevFrom))
         .query(`
           SELECT
             ISNULL(SUM(CASE WHEN Logged >= @from     AND Logged < @to   THEN TotalAfterTax ELSE 0 END), 0) AS Revenue,
@@ -336,9 +346,9 @@ app.get('/api/sales/summary', requireApiKey, async (req, res) => {
             AND Logged >= @prevFrom AND Logged < @to
         `),
       pool.request()
-        .input('from',     sql.DateTime, from)
-        .input('to',       sql.DateTime, to)
-        .input('prevFrom', sql.DateTime, prevFrom)
+        .input('from',     sql.DateTime, toSqlDate(from))
+        .input('to',       sql.DateTime, toSqlDate(to))
+        .input('prevFrom', sql.DateTime, toSqlDate(prevFrom))
         .query(`
           SELECT
             ISNULL(SUM(CASE WHEN TH.Logged >= @from     AND TH.Logged < @to   THEN TL.Quantity ELSE 0 END), 0) AS ItemsSold,
@@ -394,8 +404,8 @@ app.get('/api/sales/trend', requireApiKey, async (req, res) => {
     const pool = await getPool();
     const [r, rSold] = await Promise.all([
       pool.request()
-        .input('from', sql.DateTime, from)
-        .input('to',   sql.DateTime, to)
+        .input('from', sql.DateTime, toSqlDate(from))
+        .input('to',   sql.DateTime, toSqlDate(to))
         .query(isHourly ? `
           SELECT DATEPART(hour, Logged) AS period,
                  ISNULL(SUM(TotalAfterTax), 0) AS Revenue, COUNT(*) AS TransCount
@@ -410,8 +420,8 @@ app.get('/api/sales/trend', requireApiKey, async (req, res) => {
           GROUP BY CONVERT(varchar(10), Logged, 120) ORDER BY period ASC
         `),
       pool.request()
-        .input('from', sql.DateTime, from)
-        .input('to',   sql.DateTime, to)
+        .input('from', sql.DateTime, toSqlDate(from))
+        .input('to',   sql.DateTime, toSqlDate(to))
         .query(isHourly ? `
           SELECT DATEPART(hour, TH.Logged) AS period,
                  ISNULL(SUM(TL.Quantity), 0) AS ItemsSold
@@ -448,8 +458,8 @@ app.get('/api/sales/trending', requireApiKey, async (req, res) => {
   try {
     const pool = await getPool();
     const r = await pool.request()
-      .input('from', sql.DateTime, from)
-      .input('to',   sql.DateTime, to)
+      .input('from', sql.DateTime, toSqlDate(from))
+      .input('to',   sql.DateTime, toSqlDate(to))
       .query(`
         WITH Ranked AS (
           SELECT
