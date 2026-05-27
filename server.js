@@ -193,7 +193,7 @@ app.get('/api/items', requireApiKey, async (req, res) => {
       )
       SELECT ${cols} FROM Paged WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
     `);
-    res.json(result.recordset);
+    res.json(result.recordset.map(fixDates));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -206,7 +206,7 @@ app.get('/api/items/:upc', requireApiKey, async (req, res) => {
       .input('upc', sql.VarChar, req.params.upc)
       .query(`SELECT ${cols} FROM AKPOS.dbo.Items WHERE UPC = @upc`);
     if (result.recordset.length === 0) return res.status(404).json({ error: 'Item not found' });
-    res.json(result.recordset[0]);
+    res.json(fixDates(result.recordset[0]));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -305,6 +305,20 @@ function toSqlDate(d) {
     d.getFullYear(), d.getMonth(), d.getDate(),
     d.getHours(), d.getMinutes(), d.getSeconds()
   ));
+}
+
+// mssql reads AKPOS local-time columns as UTC-labeled JS Dates.
+// Return a naive ISO string (no Z) so the browser parses it as local time.
+const _pad = n => String(n).padStart(2, '0');
+function toLocalStr(d) {
+  if (!d) return null;
+  return `${d.getUTCFullYear()}-${_pad(d.getUTCMonth()+1)}-${_pad(d.getUTCDate())}` +
+         `T${_pad(d.getUTCHours())}:${_pad(d.getUTCMinutes())}:${_pad(d.getUTCSeconds())}`;
+}
+function fixDates(row) {
+  const out = {};
+  for (const [k, v] of Object.entries(row)) out[k] = v instanceof Date ? toLocalStr(v) : v;
+  return out;
 }
 
 function salesDateRange(range, qFrom, qTo) {
@@ -534,7 +548,7 @@ function coerceSp(col, raw) {
     case 'Money': { const n = Number(raw); return isNaN(n) ? { error: `${col} must be a number` } : { value: n }; }
     case 'TinyInt': { const n = parseInt(raw, 10); return isNaN(n) ? { error: `${col} must be integer` } : { value: n }; }
     case 'Bit': return { value: raw === true || raw === 1 || raw === '1' || raw === 'true' };
-    case 'DateTime': { const dt = new Date(raw); return isNaN(dt) ? { error: `${col} invalid date` } : { value: dt }; }
+    case 'DateTime': { const dt = new Date(raw); return isNaN(dt) ? { error: `${col} invalid date` } : { value: toSqlDate(dt) }; }
     default: return { error: `Unsupported type for ${col}` };
   }
 }
@@ -580,7 +594,7 @@ app.get('/api/specials', requireApiKey, async (req, res) => {
              PriceType, Value, CombQty, DayOfWeek, InActive, ItemPrice
       FROM P WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
     `);
-    res.json(r.recordset);
+    res.json(r.recordset.map(fixDates));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -592,7 +606,7 @@ app.get('/api/specials/:id', requireApiKey, async (req, res) => {
       .input('id', sql.Int, parseInt(req.params.id, 10))
       .query(`SELECT * FROM AKPOS.dbo.Specials WHERE ID = @id`);
     if (!r.recordset.length) return res.status(404).json({ error: 'Special not found' });
-    res.json(r.recordset[0]);
+    res.json(fixDates(r.recordset[0]));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -648,7 +662,73 @@ app.get('/api/items/:upc/specials', requireApiKey, async (req, res) => {
           AND (ToDate   IS NULL OR ToDate   >= GETDATE())
         ORDER BY Value DESC
       `);
-    res.json(r.recordset);
+    res.json(r.recordset.map(fixDates));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ---- Transaction routes ----
+
+app.get('/api/transactions', requireApiKey, async (req, res) => {
+  const range  = req.query.range || 'today';
+  const search = (req.query.search || '').trim();
+  const limit  = Math.min(parseInt(req.query.limit,  10) || 30, 100);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0,  0);
+  const rowFrom = offset + 1, rowTo = offset + limit;
+  try {
+    const pool    = await getPool();
+    const request = pool.request();
+    let dateWhere = '';
+    if (range !== 'all') {
+      const { from, to } = salesDateRange(range, req.query.from, req.query.to);
+      request.input('from', sql.DateTime, toSqlDate(from));
+      request.input('to',   sql.DateTime, toSqlDate(to));
+      dateWhere = 'AND TH.Logged >= @from AND TH.Logged < @to';
+    }
+    let searchWhere = '';
+    if (search) {
+      request.input('srch', sql.VarChar, `%${search}%`);
+      searchWhere = `AND CAST(TH.TransNo AS VARCHAR) LIKE @srch`;
+    }
+    const r = await request.query(`
+      WITH P AS (
+        SELECT TH.TransNo, TH.Logged, TH.TotalAfterTax,
+               COUNT(TL.UPC) AS ItemCount,
+               ROW_NUMBER() OVER (ORDER BY TH.Logged DESC) AS _rn
+        FROM AKPOS.dbo.TransHeaders TH
+        LEFT JOIN AKPOS.dbo.TransLines TL
+          ON TL.TransNo = TH.TransNo AND TL.IsVoided = 0 AND TL.SubAfterTax > 0
+        WHERE TH.TransStatus = 'C'
+          ${dateWhere} ${searchWhere}
+        GROUP BY TH.TransNo, TH.Logged, TH.TotalAfterTax
+      )
+      SELECT TransNo, Logged, TotalAfterTax, ItemCount
+      FROM P WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
+    `);
+    res.json(r.recordset.map(fixDates));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+app.get('/api/transactions/:transNo', requireApiKey, async (req, res) => {
+  try {
+    const pool    = await getPool();
+    const t       = req.params.transNo;
+    const [hRes, lRes] = await Promise.all([
+      pool.request()
+        .input('t', sql.VarChar(20), t)
+        .query(`SELECT TransNo, Logged, TotalAfterTax FROM AKPOS.dbo.TransHeaders WHERE TransNo = @t`),
+      pool.request()
+        .input('t', sql.VarChar(20), t)
+        .query(`
+          SELECT TL.UPC, ISNULL(I.Description, TL.UPC) AS Description,
+                 TL.Quantity, TL.SubAfterTax
+          FROM AKPOS.dbo.TransLines TL
+          LEFT JOIN AKPOS.dbo.Items I ON I.UPC = TL.UPC
+          WHERE TL.TransNo = @t AND TL.IsVoided = 0 AND TL.SubAfterTax > 0
+        `),
+    ]);
+    if (!hRes.recordset.length) return res.status(404).json({ error: 'Transaction not found' });
+    res.json({ ...fixDates(hRes.recordset[0]), lines: lRes.recordset.map(fixDates) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

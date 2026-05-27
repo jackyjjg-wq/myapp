@@ -62,6 +62,23 @@
         <span id="homeBrandName" class="home-brand-text">AKPOS Items</span>
       </div>
 
+      <div id="homeStats" class="home-stats" hidden>
+        <div class="home-stat">
+          <div class="home-stat-val" id="homeStatRevenue">—</div>
+          <div class="home-stat-lbl" id="homeStatTodayLbl">Today's Sales</div>
+        </div>
+        <div class="home-stat-sep"></div>
+        <div class="home-stat">
+          <div class="home-stat-val" id="homeStatTrans">—</div>
+          <div class="home-stat-lbl" id="homeStatTransLbl">Transactions</div>
+        </div>
+        <div class="home-stat-sep"></div>
+        <div class="home-stat">
+          <div class="home-stat-val home-stat-change" id="homeStatChange">—</div>
+          <div class="home-stat-lbl" id="homeStatChangeLbl">vs Yesterday</div>
+        </div>
+      </div>
+
       <div class="home-options">
         <button id="homeInventoryBtn" class="home-option-card">
           <div class="home-option-icon">
@@ -101,6 +118,21 @@
           <div class="home-option-body">
             <div class="home-option-title" id="homeSpecialsBtnTitle">Specials</div>
             <div class="home-option-sub"   id="homeSpecialsSub">Manage discounts &amp; offers</div>
+          </div>
+          <span class="home-option-arrow">›</span>
+        </button>
+
+        <button id="homeTransBtn" class="home-option-card">
+          <div class="home-option-icon home-option-icon--trans">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2"/>
+              <line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/>
+              <line x1="9" y1="15" x2="13" y2="15"/>
+            </svg>
+          </div>
+          <div class="home-option-body">
+            <div class="home-option-title" id="homeTransBtnTitle">Transactions</div>
+            <div class="home-option-sub"   id="homeTransSub">Look up receipts &amp; history</div>
           </div>
           <span class="home-option-arrow">›</span>
         </button>
@@ -470,6 +502,95 @@
         <button id="spSaveBtn"   class="btn btn-primary btn-full btn-lg" type="submit">Save Changes</button>
       </div>
     </form>
+  </section>
+
+  <!-- ═══ TRANSACTIONS LIST ══════════════════════════════ -->
+  <section id="transView" class="screen" hidden>
+    <header class="topbar">
+      <button id="transBackBtn" class="ghost-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="topbar-brand">
+        <div class="topbar-icon" style="background:linear-gradient(145deg,#6366f1,#8b5cf6)">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2"/>
+            <line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/>
+            <line x1="9" y1="15" x2="13" y2="15"/>
+          </svg>
+        </div>
+        <span class="topbar-name" id="transTopbarName">Transactions</span>
+      </div>
+      <div style="width:36px"></div>
+    </header>
+
+    <div class="range-tabs" id="transRangeTabs">
+      <button class="range-tab active" data-range="today">Today</button>
+      <button class="range-tab" data-range="yesterday">Yesterday</button>
+      <button class="range-tab" data-range="week">This Week</button>
+      <button class="range-tab" data-range="month">This Month</button>
+      <button class="range-tab" data-range="all">All</button>
+      <button class="range-tab" data-range="custom">Custom</button>
+    </div>
+
+    <div id="transCustomRow" class="sales-custom-row" hidden>
+      <div class="custom-date-group">
+        <label class="custom-date-label" for="transFromDate">From</label>
+        <input id="transFromDate" type="date" class="custom-date-input" />
+      </div>
+      <span class="custom-date-sep">→</span>
+      <div class="custom-date-group">
+        <label class="custom-date-label" for="transToDate">To</label>
+        <input id="transToDate" type="date" class="custom-date-input" />
+      </div>
+    </div>
+
+    <div class="search-row">
+      <div class="search-field">
+        <svg class="search-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input id="transSearchInput" type="search" placeholder="Search by transaction #…" autocomplete="off" enterkeyhint="search" />
+        <button id="transSearchClearBtn" class="clear-btn" hidden aria-label="Clear">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <ul id="transList" class="list"></ul>
+    <div id="transSkeleton" class="list" hidden>
+      <li class="skel-card"></li><li class="skel-card"></li><li class="skel-card skel-card--sm"></li>
+    </div>
+    <div id="transEmpty" class="empty" hidden>
+      <svg viewBox="0 0 48 48" width="52" height="52" fill="none">
+        <rect x="12" y="4" width="24" height="40" rx="3" stroke="currentColor" stroke-width="2" opacity=".25"/>
+        <line x1="18" y1="14" x2="30" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".25"/>
+        <line x1="18" y1="22" x2="30" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".25"/>
+        <line x1="18" y1="30" x2="24" y2="30" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".25"/>
+      </svg>
+      <p class="empty-title" id="transEmptyTitle">No transactions found</p>
+    </div>
+    <button id="transMoreBtn" class="trending-more-btn" hidden>Show more</button>
+  </section>
+
+  <!-- ═══ TRANSACTION DETAIL ══════════════════════════════ -->
+  <section id="transDetailView" class="screen" hidden>
+    <header class="topbar">
+      <button id="transDetailBackBtn" class="ghost-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="topbar-center">
+        <div id="transDetailTitle" class="topbar-title">Transaction</div>
+        <div id="transDetailSub"   class="topbar-meta"></div>
+      </div>
+      <div style="width:36px"></div>
+    </header>
+    <div id="transDetailContent" class="form-sections"></div>
   </section>
 
   <!-- ═══ SCANNER ═══════════════════════════════════════ -->

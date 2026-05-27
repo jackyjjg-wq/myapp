@@ -41,6 +41,9 @@
       enterBarcode: 'Enter barcode number:',
       // Specials
       homeSpecials: 'Specials', homeSpecialsSub: 'Manage discounts & offers',
+      homeTrans: 'Transactions', homeTransSub: 'Look up receipts & history',
+      transTitle: 'Transactions', transNoData: 'No transactions found',
+      transRangeAll: 'All', transRangeCustom: 'Custom',
       specialsTitle: 'Specials', newSpecial: 'New Special', specialsNoData: 'No specials found',
       spEditTitle: 'Edit Special', spNewTitle: 'New Special',
       spSaveChanges: 'Save Changes', spCreateSpecial: 'Create Special',
@@ -52,6 +55,9 @@
       spItemSpecials: 'Active Specials',
       spStatusActive: 'Active', spStatusInactive: 'Inactive',
       spStatusUpcoming: 'Upcoming', spStatusExpired: 'Expired',
+      // Home stats
+      homeStatToday: "Today's Sales", homeStatTrans: 'Transactions', homeStatVs: 'vs Yesterday',
+      priceUpdated: p => `Price → ${p}`,
       // Toasts & dialogs
       enterApiKey: 'Please enter your API key', signInFailed: 'Sign-in failed',
       itemCreated: 'Item created', noChanges: 'No changes',
@@ -95,6 +101,9 @@
       enterBarcode: '请输入条码：',
       // Specials
       homeSpecials: '促销', homeSpecialsSub: '管理折扣与优惠',
+      homeTrans: '交易记录', homeTransSub: '查询收据与历史',
+      transTitle: '交易记录', transNoData: '暂无交易记录',
+      transRangeAll: '全部', transRangeCustom: '自定义',
       specialsTitle: '促销管理', newSpecial: '新促销', specialsNoData: '暂无促销',
       spEditTitle: '编辑促销', spNewTitle: '新建促销',
       spSaveChanges: '保存更改', spCreateSpecial: '创建促销',
@@ -106,6 +115,9 @@
       spItemSpecials: '当前促销',
       spStatusActive: '有效', spStatusInactive: '已停用',
       spStatusUpcoming: '未开始', spStatusExpired: '已过期',
+      // Home stats
+      homeStatToday: '今日销售', homeStatTrans: '交易数', homeStatVs: '较昨日',
+      priceUpdated: p => `价格 → ${p}`,
       // Toasts & dialogs
       enterApiKey: '请输入API密钥', signInFailed: '登录失败',
       itemCreated: '商品已创建', noChanges: '无变更',
@@ -144,7 +156,8 @@
     apiKeyInput: $('apiKeyInput'), rememberMe: $('rememberMe'),
     loginBtn: $('loginBtn'),
     homeInventoryBtn: $('homeInventoryBtn'), homeSalesBtn: $('homeSalesBtn'),
-    homeSpecialsBtn: $('homeSpecialsBtn'), homeLogoutBtn: $('homeLogoutBtn'),
+    homeSpecialsBtn: $('homeSpecialsBtn'), homeTransBtn: $('homeTransBtn'),
+    homeLogoutBtn: $('homeLogoutBtn'),
     listHomeBtn: $('listHomeBtn'), logoutBtn: $('logoutBtn'),
     searchInput: $('searchInput'), searchClearBtn: $('searchClearBtn'), searchScanBtn: $('searchScanBtn'),
     newBtn: $('newBtn'), itemsList: $('itemsList'), skeleton: $('skeleton'),
@@ -193,6 +206,16 @@
   let salesCustomFrom = todayStr();
   let salesCustomTo   = todayStr();
 
+  // Transactions state
+  let transRange      = 'today';
+  let transCustomFrom = todayStr();
+  let transCustomTo   = todayStr();
+  let transSearch     = '';
+  let transOffset     = 0;
+  let transAllLoaded  = false;
+  let transLoading    = false;
+  const TRANS_PAGE    = 5;
+
   // Specials state
   let curSpecial      = null;
   let specialMode     = 'edit';
@@ -223,12 +246,15 @@
     if (!els.loginBtn.disabled) els.loginBtn.textContent = t('signIn');
 
     // Home
-    $('homeBrandName').textContent    = t('appName');
-    $('homeInvTitle').textContent     = t('homeInventory');
-    $('homeInvSub').textContent       = t('homeInventorySub');
-    $('homeSalesBtnTitle').textContent= t('homeSales');
-    $('homeSalesSub').textContent     = t('homeSalesSub');
-    $('homeLogoutText').textContent   = t('homeSignOut');
+    $('homeBrandName').textContent       = t('appName');
+    $('homeInvTitle').textContent        = t('homeInventory');
+    $('homeInvSub').textContent          = t('homeInventorySub');
+    $('homeSalesBtnTitle').textContent   = t('homeSales');
+    $('homeSalesSub').textContent        = t('homeSalesSub');
+    $('homeLogoutText').textContent      = t('homeSignOut');
+    $('homeStatTodayLbl').textContent    = t('homeStatToday');
+    $('homeStatTransLbl').textContent    = t('homeStatTrans');
+    $('homeStatChangeLbl').textContent   = t('homeStatVs');
 
     // List
     $('topbarName').textContent      = t('inventoryTitle');
@@ -277,6 +303,10 @@
     // Specials
     $('homeSpecialsBtnTitle').textContent = t('homeSpecials');
     $('homeSpecialsSub').textContent      = t('homeSpecialsSub');
+    $('homeTransBtnTitle').textContent    = t('homeTrans');
+    $('homeTransSub').textContent         = t('homeTransSub');
+    $('transTopbarName').textContent      = t('transTitle');
+    $('transEmptyTitle').textContent      = t('transNoData');
     $('specialsTopbarName').textContent   = t('specialsTitle');
     $('specialsEmptyTitle').textContent   = t('specialsNoData');
     $('newSpecialBtnText').textContent    = t('newSpecial');
@@ -324,8 +354,31 @@
     els.listView.hidden       = name !== 'list';
     els.editView.hidden       = name !== 'edit';
     els.salesView.hidden      = name !== 'sales';
-    els.specialsView.hidden   = name !== 'specials';
+    els.specialsView.hidden    = name !== 'specials';
     els.specialEditView.hidden = name !== 'specialEdit';
+    $('transView').hidden      = name !== 'trans';
+    $('transDetailView').hidden = name !== 'transDetail';
+    if (name === 'home' && apiKey) loadHomeStats();
+  }
+
+  async function loadHomeStats() {
+    const statsEl = $('homeStats');
+    if (!statsEl) return;
+    try {
+      const d = await api('/api/sales/summary?range=today');
+      $('homeStatRevenue').textContent = fmt$(d.revenue);
+      $('homeStatTrans').textContent   = String(d.transCount);
+      const chEl = $('homeStatChange');
+      if (d.prevRevenue > 0) {
+        const pct = Math.round((d.revenue - d.prevRevenue) / d.prevRevenue * 100);
+        chEl.textContent  = (pct >= 0 ? '+' : '') + pct + '%';
+        chEl.className    = 'home-stat-val home-stat-change ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat');
+      } else {
+        chEl.textContent = '—';
+        chEl.className   = 'home-stat-val home-stat-change';
+      }
+      statsEl.hidden = false;
+    } catch { /* non-critical — silently ignore */ }
   }
 
   /* ── Toast ────────────────────────────────────── */
@@ -417,6 +470,60 @@
     showView(specialNavSrc === 'edit' ? 'edit' : 'specials');
   });
 
+  /* ── Transactions navigation ──────────────────── */
+  els.homeTransBtn.addEventListener('click', () => {
+    transSearch = ''; $('transSearchInput').value = ''; $('transSearchClearBtn').hidden = true;
+    transRange = 'today'; $('transCustomRow').hidden = true;
+    document.querySelectorAll('#transRangeTabs .range-tab').forEach(b => b.classList.toggle('active', b.dataset.range === 'today'));
+    showView('trans'); loadTransactions(true);
+  });
+  $('transBackBtn').addEventListener('click', () => showView('home'));
+  $('transDetailBackBtn').addEventListener('click', () => showView('trans'));
+
+  $('transRangeTabs').addEventListener('click', e => {
+    const btn = e.target.closest('.range-tab'); if (!btn) return;
+    const r = btn.dataset.range;
+    if (r === 'custom') {
+      if (!$('transFromDate').value) $('transFromDate').value = todayStr();
+      if (!$('transToDate').value)   $('transToDate').value   = todayStr();
+      transCustomFrom = $('transFromDate').value; transCustomTo = $('transToDate').value;
+    }
+    transRange = r;
+    $('transCustomRow').hidden = (r !== 'custom');
+    document.querySelectorAll('#transRangeTabs .range-tab').forEach(b => b.classList.toggle('active', b.dataset.range === r));
+    loadTransactions(true);
+  });
+
+  let transCustomTimer = null;
+  function onTransCustomDate() {
+    transCustomFrom = $('transFromDate').value || todayStr();
+    transCustomTo   = $('transToDate').value   || todayStr();
+    if (transCustomTo < transCustomFrom) { $('transToDate').value = transCustomFrom; transCustomTo = transCustomFrom; }
+    clearTimeout(transCustomTimer);
+    transCustomTimer = setTimeout(() => loadTransactions(true), 400);
+  }
+  $('transFromDate').addEventListener('change', onTransCustomDate);
+  $('transToDate').addEventListener('change', onTransCustomDate);
+
+  let transSearchTimer = null;
+  $('transSearchInput').addEventListener('input', () => {
+    const v = $('transSearchInput').value;
+    $('transSearchClearBtn').hidden = !v.length;
+    clearTimeout(transSearchTimer);
+    transSearchTimer = setTimeout(() => { transSearch = v.trim(); loadTransactions(true); }, 260);
+  });
+  $('transSearchClearBtn').addEventListener('click', () => {
+    $('transSearchInput').value = ''; $('transSearchClearBtn').hidden = true;
+    transSearch = ''; loadTransactions(true); $('transSearchInput').focus();
+  });
+
+  $('transMoreBtn').addEventListener('click', async () => {
+    const btn = $('transMoreBtn');
+    btn.disabled = true; btn.textContent = '…';
+    await loadTransactions(false);
+    btn.disabled = false; btn.textContent = 'Show more';
+  });
+
   // Specials search
   let spSearchTimer = null;
   els.spSearchInput.addEventListener('input', () => {
@@ -462,14 +569,55 @@
     li.innerHTML = `
       <div class="item-avatar">${initials}</div>
       <div class="item-body"><div class="item-name"></div><div class="item-meta"></div></div>
-      <div class="item-right"><div class="item-price"></div>${item.Unit ? `<span class="item-unit"></span>` : ''}</div>`;
-    li.querySelector('.item-name').textContent  = desc;
-    li.querySelector('.item-meta').textContent  = meta.join(' · ');
-    li.querySelector('.item-price').textContent = fmt$(item.Price1);
+      <div class="item-right"><div class="item-price editable-price"></div>${item.Unit ? `<span class="item-unit"></span>` : ''}</div>`;
+    li.querySelector('.item-name').textContent = desc;
+    li.querySelector('.item-meta').textContent = meta.join(' · ');
+    const priceEl = li.querySelector('.item-price');
+    priceEl.textContent      = fmt$(item.Price1);
+    priceEl.dataset.rawPrice = item.Price1 != null ? String(item.Price1) : '';
+    priceEl.title            = 'Tap to edit price';
+    priceEl.addEventListener('click', e => {
+      e.stopPropagation();
+      openInlinePriceEdit(priceEl, item.UPC);
+    });
     if (item.Unit) li.querySelector('.item-unit').textContent = item.Unit;
     li.addEventListener('click', () => openEdit(item.UPC));
     li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openEdit(item.UPC); });
     return li;
+  }
+
+  function openInlinePriceEdit(priceEl, upc) {
+    if (priceEl.querySelector('input')) return;
+    const prevText  = priceEl.textContent;
+    const prevPrice = parseFloat(priceEl.dataset.rawPrice);
+    priceEl.innerHTML = '';
+    const inp = document.createElement('input');
+    inp.className = 'price-inline-input';
+    inp.type = 'number'; inp.step = '0.01'; inp.min = '0';
+    inp.value = isNaN(prevPrice) ? '' : prevPrice.toFixed(2);
+    priceEl.appendChild(inp);
+    inp.focus(); inp.select();
+    let committed = false;
+    async function commit() {
+      if (committed) return; committed = true;
+      const val = parseFloat(inp.value);
+      if (isNaN(val) || val < 0 || (!isNaN(prevPrice) && Math.abs(val - prevPrice) < 0.001)) {
+        priceEl.textContent = prevText; return;
+      }
+      priceEl.textContent = '…';
+      try {
+        await api(`/api/items/${encodeURIComponent(upc)}`, { method: 'PUT', body: JSON.stringify({ Price1: val }) });
+        priceEl.textContent      = fmt$(val);
+        priceEl.dataset.rawPrice = String(val);
+        toast(t('priceUpdated', fmt$(val)), 'success');
+        vibrate(40);
+      } catch (err) { priceEl.textContent = prevText; toast(err.message, 'error'); }
+    }
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); inp.blur(); }
+      if (e.key === 'Escape') { committed = true; priceEl.textContent = prevText; }
+    });
+    inp.addEventListener('blur', commit);
   }
 
   function updateCountBadge() {
@@ -1087,6 +1235,134 @@
       els.scannerStatus.textContent = err.message || t('lookupFailed');
       setTimeout(() => { if (!scanActive) { scanActive = true; runScanLoop(); } els.scannerStatus.textContent = t('scannerReady'); }, 1500);
     }
+  }
+
+  /* ── Transaction functions ───────────────────── */
+  function transRangeQS(range) {
+    if (range === 'custom') return `range=custom&from=${transCustomFrom}&to=${transCustomTo}`;
+    return `range=${range}`;
+  }
+
+  async function loadTransactions(reset) {
+    if (reset) {
+      transOffset = 0; transAllLoaded = false; transLoading = false;
+      $('transList').innerHTML = ''; $('transEmpty').hidden = true;
+      $('transMoreBtn').hidden = true; $('transSkeleton').hidden = false;
+    }
+    if (transLoading || transAllLoaded) return;
+    transLoading = true;
+    try {
+      const qs   = `${transRangeQS(transRange)}&search=${encodeURIComponent(transSearch)}&limit=${TRANS_PAGE}&offset=${transOffset}`;
+      const data = await api(`/api/transactions?${qs}`);
+      $('transSkeleton').hidden = true;
+      if (transOffset === 0 && data.length === 0) {
+        $('transEmpty').hidden = false;
+        $('transMoreBtn').hidden = true;
+      } else {
+        const frag = document.createDocumentFragment();
+        for (const tx of data) frag.appendChild(buildTransCard(tx));
+        $('transList').appendChild(frag);
+        transOffset += data.length;
+        transAllLoaded = data.length < TRANS_PAGE;
+        $('transMoreBtn').hidden = transAllLoaded;
+        $('transMoreBtn').textContent = 'Show more';
+      }
+    } catch (err) {
+      $('transSkeleton').hidden = true;
+      toast(err.message, 'error');
+    }
+    transLoading = false;
+  }
+
+  function buildTransCard(tx) {
+    const li = document.createElement('li');
+    li.className = 'item-card trans-card';
+    li.setAttribute('role', 'button'); li.tabIndex = 0;
+    const d = new Date(tx.Logged);
+    const isToday = !isNaN(d) && d.toDateString() === new Date().toDateString();
+    const dateLabel = isNaN(d) ? '' : (isToday
+      ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString() + '  ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    li.innerHTML = `
+      <div class="trans-icon-wrap">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="5" y="2" width="14" height="20" rx="2"/>
+          <line x1="9" y1="7" x2="15" y2="7"/><line x1="9" y1="11" x2="15" y2="11"/>
+          <line x1="9" y1="15" x2="13" y2="15"/>
+        </svg>
+      </div>
+      <div class="item-body">
+        <div class="trans-card-no"></div>
+        <div class="item-meta trans-card-time"></div>
+      </div>
+      <div class="item-right">
+        <div class="item-price"></div>
+        <span class="item-unit trans-card-items"></span>
+      </div>`;
+    li.querySelector('.trans-card-no').textContent    = `#${tx.TransNo}`;
+    li.querySelector('.trans-card-time').textContent  = dateLabel;
+    li.querySelector('.item-price').textContent       = fmt$(tx.TotalAfterTax);
+    li.querySelector('.trans-card-items').textContent = tx.ItemCount > 0 ? `${tx.ItemCount} items` : '';
+    li.addEventListener('click', () => openTransDetail(String(tx.TransNo)));
+    li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openTransDetail(String(tx.TransNo)); });
+    return li;
+  }
+
+  async function openTransDetail(transNo) {
+    $('transDetailTitle').textContent = `#${transNo}`;
+    $('transDetailSub').textContent   = '';
+    $('transDetailContent').innerHTML = '';
+    showView('transDetail');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    try {
+      const d = await api(`/api/transactions/${encodeURIComponent(transNo)}`);
+      const logged = new Date(d.Logged);
+      if (!isNaN(logged)) {
+        $('transDetailSub').textContent = logged.toLocaleDateString() + '  ' +
+          logged.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      const content = $('transDetailContent');
+
+      const summaryHdr = document.createElement('div');
+      summaryHdr.className = 'form-section-title'; summaryHdr.textContent = 'Summary';
+      content.appendChild(summaryHdr);
+      const summaryGroup = document.createElement('div');
+      summaryGroup.className = 'form-group trans-summary-card';
+      summaryGroup.innerHTML = `
+        <div class="trans-summary-row"><span class="trans-summary-lbl">Total</span><span class="trans-summary-val trans-summary-total"></span></div>
+        <div class="trans-summary-row"><span class="trans-summary-lbl">Items</span><span class="trans-summary-val"></span></div>`;
+      summaryGroup.querySelector('.trans-summary-total').textContent = fmt$(d.TotalAfterTax);
+      summaryGroup.querySelectorAll('.trans-summary-val')[1].textContent = String(d.lines.length);
+      content.appendChild(summaryGroup);
+
+      const linesHdr = document.createElement('div');
+      linesHdr.className = 'form-section-title'; linesHdr.textContent = 'Items';
+      content.appendChild(linesHdr);
+      const linesGroup = document.createElement('div');
+      linesGroup.className = 'form-group';
+      for (const line of d.lines) {
+        const qty   = Number(line.Quantity)    || 0;
+        const total = Number(line.SubAfterTax) || 0;
+        const unit  = qty ? total / qty : 0;
+        const row   = document.createElement('div');
+        row.className = 'trans-line-row';
+        row.innerHTML = `
+          <div class="trans-line-body">
+            <div class="trans-line-desc"></div>
+            <div class="trans-line-upc"></div>
+          </div>
+          <div class="trans-line-right">
+            <div class="trans-line-total"></div>
+            <div class="trans-line-meta"></div>
+          </div>`;
+        row.querySelector('.trans-line-desc').textContent  = line.Description || line.UPC;
+        row.querySelector('.trans-line-upc').textContent   = (line.UPC && line.UPC !== line.Description) ? line.UPC : '';
+        row.querySelector('.trans-line-total').textContent = fmt$(total);
+        row.querySelector('.trans-line-meta').textContent  = qty > 1 ? `${qty} \xd7 ${fmt$(unit)}` : '';
+        linesGroup.appendChild(row);
+      }
+      content.appendChild(linesGroup);
+    } catch (err) { toast(err.message, 'error'); showView('trans'); }
   }
 
   /* ── Specials helpers ─────────────────────────── */
