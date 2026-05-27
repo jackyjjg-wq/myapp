@@ -247,6 +247,19 @@
       <button class="range-tab" data-range="week">This Week</button>
       <button class="range-tab" data-range="month">This Month</button>
       <button class="range-tab" data-range="monthly">Monthly</button>
+      <button class="range-tab" data-range="custom" id="salesCustomTab">Custom</button>
+    </div>
+
+    <div id="salesCustomRow" class="sales-custom-row" hidden>
+      <div class="custom-date-group">
+        <label class="custom-date-label" for="salesFromDate">From</label>
+        <input id="salesFromDate" type="date" class="custom-date-input" />
+      </div>
+      <span class="custom-date-sep">→</span>
+      <div class="custom-date-group">
+        <label class="custom-date-label" for="salesToDate">To</label>
+        <input id="salesToDate" type="date" class="custom-date-input" />
+      </div>
     </div>
 
     <div id="salesLoading" class="sales-loading" hidden><span class="spinner"></span></div>

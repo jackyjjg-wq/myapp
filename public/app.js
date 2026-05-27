@@ -189,6 +189,9 @@
   let trendingOffset     = 0;
   let trendingCurRange   = 'today';
   const TRENDING_PAGE    = 5;
+  function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+  let salesCustomFrom = todayStr();
+  let salesCustomTo   = todayStr();
 
   // Specials state
   let curSpecial      = null;
@@ -513,11 +516,19 @@
   sentinelObserver.observe(els.listSentinel);
 
   /* ── Sales dashboard ──────────────────────────── */
+  function salesRangeQS(range) {
+    if (range === 'custom') return `range=custom&from=${salesCustomFrom}&to=${salesCustomTo}`;
+    return `range=${range}`;
+  }
+
   async function loadSales(range) {
     currentSalesRange = range;
     document.querySelectorAll('.range-tab').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.range === range);
     });
+    const customRow = $('salesCustomRow');
+    if (customRow) customRow.hidden = (range !== 'custom');
+
     $('salesStats').hidden     = true;
     $('salesMonthly').hidden   = true;
     $('salesTrend').hidden     = true;
@@ -534,10 +545,11 @@
         if (!monthly.length) { $('salesEmpty').hidden = false; }
         else { renderMonthly(monthly); $('salesMonthly').hidden = false; }
       } else {
+        const qs = salesRangeQS(range);
         const [summary, trend, trending] = await Promise.all([
-          api(`/api/sales/summary?range=${range}`),
-          api(`/api/sales/trend?range=${range}`),
-          api(`/api/sales/trending?range=${range}&limit=${TRENDING_PAGE}&offset=0`),
+          api(`/api/sales/summary?${qs}`),
+          api(`/api/sales/trend?${qs}`),
+          api(`/api/sales/trending?${qs}&limit=${TRENDING_PAGE}&offset=0`),
         ]);
         els.salesLoading.hidden = true;
         if (summary.transCount === 0) { $('salesEmpty').hidden = false; }
@@ -756,7 +768,7 @@
     btn.disabled = true;
     trendingOffset += TRENDING_PAGE;
     try {
-      const data = await api(`/api/sales/trending?range=${trendingCurRange}&limit=${TRENDING_PAGE}&offset=${trendingOffset}`);
+      const data = await api(`/api/sales/trending?${salesRangeQS(trendingCurRange)}&limit=${TRENDING_PAGE}&offset=${trendingOffset}`);
       renderTrending(data, true);
     } catch (err) { toast(err.message, 'error'); }
     btn.disabled = false;
@@ -764,8 +776,28 @@
 
   els.salesRangeTabs.addEventListener('click', e => {
     const btn = e.target.closest('.range-tab');
-    if (btn) loadSales(btn.dataset.range);
+    if (!btn) return;
+    if (btn.dataset.range === 'custom') {
+      const fd = $('salesFromDate'), td = $('salesToDate');
+      if (fd && !fd.value) fd.value = todayStr();
+      if (td && !td.value) td.value = todayStr();
+      salesCustomFrom = $('salesFromDate')?.value || todayStr();
+      salesCustomTo   = $('salesToDate')?.value   || todayStr();
+    }
+    loadSales(btn.dataset.range);
   });
+
+  let customDateTimer = null;
+  function onCustomDateChange() {
+    salesCustomFrom = $('salesFromDate')?.value || todayStr();
+    salesCustomTo   = $('salesToDate')?.value   || todayStr();
+    if (!salesCustomFrom || !salesCustomTo) return;
+    if (salesCustomTo < salesCustomFrom) { $('salesToDate').value = salesCustomFrom; salesCustomTo = salesCustomFrom; }
+    clearTimeout(customDateTimer);
+    customDateTimer = setTimeout(() => loadSales('custom'), 400);
+  }
+  $('salesFromDate')?.addEventListener('change', onCustomDateChange);
+  $('salesToDate')?.addEventListener('change', onCustomDateChange);
 
   /* ── Form build ───────────────────────────────── */
   function buildForm() {

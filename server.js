@@ -307,7 +307,16 @@ function toSqlDate(d) {
   ));
 }
 
-function salesDateRange(range) {
+function salesDateRange(range, qFrom, qTo) {
+  if (range === 'custom' && qFrom) {
+    const [fy, fm, fd] = qFrom.split('-').map(Number);
+    const from = new Date(fy, fm - 1, fd);
+    if (qTo) {
+      const [ty, tm, td] = qTo.split('-').map(Number);
+      return { from, to: new Date(ty, tm - 1, td + 1) };
+    }
+    return { from, to: new Date(fy, fm - 1, fd + 1) };
+  }
   const now = new Date();
   const tod = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tom = new Date(tod.getTime() + 86400000);
@@ -319,13 +328,13 @@ function salesDateRange(range) {
       return { from: mon, to: tom };
     }
     case 'month': return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: tom };
-    default: return { from: tod, to: tom }; // today
+    default: return { from: tod, to: tom };
   }
 }
 
 // Summary stats for a date range + previous period comparison
 app.get('/api/sales/summary', requireApiKey, async (req, res) => {
-  const { from, to } = salesDateRange(req.query.range || 'today');
+  const { from, to } = salesDateRange(req.query.range || 'today', req.query.from, req.query.to);
   const span     = to - from;
   const prevFrom = new Date(from.getTime() - span);
   try {
@@ -398,7 +407,7 @@ app.get('/api/sales/monthly', requireApiKey, async (req, res) => {
 // Hourly (today/yesterday) or daily (week/month) revenue trend
 app.get('/api/sales/trend', requireApiKey, async (req, res) => {
   const range = req.query.range || 'today';
-  const { from, to } = salesDateRange(range);
+  const { from, to } = salesDateRange(range, req.query.from, req.query.to);
   const isHourly = range === 'today' || range === 'yesterday';
   try {
     const pool = await getPool();
@@ -450,7 +459,7 @@ app.get('/api/sales/trend', requireApiKey, async (req, res) => {
 // Top-selling items by quantity for a given range, with pagination
 app.get('/api/sales/trending', requireApiKey, async (req, res) => {
   const range  = req.query.range === 'monthly' ? 'month' : (req.query.range || 'today');
-  const { from, to } = salesDateRange(range);
+  const { from, to } = salesDateRange(range, req.query.from, req.query.to);
   const limit  = Math.min(parseInt(req.query.limit,  10) || 5,  100);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0,  0);
   const rowFrom = offset + 1;
