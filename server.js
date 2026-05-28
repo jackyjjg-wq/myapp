@@ -61,6 +61,19 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/auth', authLimiter);
 app.use('/api', apiLimiter);
 
+// CORS — allow LAN clients (POS terminals, tablets, file:// dev)
+app.use('/api', (req, res, next) => {
+  const origin = req.headers.origin;
+  const allowed = !origin || /^(null|file:|https?:\/\/localhost|https?:\/\/127\.|https?:\/\/192\.168\.|https?:\/\/10\.)/.test(origin);
+  if (allowed) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-API-Key');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 const sqlConfig = {
   user: process.env.SQL_USER,
   password: process.env.SQL_PASSWORD,
@@ -986,7 +999,101 @@ app.get('/api/transactions/:transNo', requireApiKey, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
-// ---- HTTPS bootstrap (camera needs a secure context) ----
+// ── POS ENDPOINTS ──────────────────────────────────────────────────────────
+
+const DEPT_EMOJI = { 1:'🥬',2:'🍎',3:'🧅',4:'🥕',5:'🫘',6:'🌿',7:'🍋',8:'🫚',9:'🥦',10:'🍇' };
+
+// Active items in POS-friendly format (id, name, emoji, category, price, unit)
+app.get('/api/pos/products', requireApiKey, async (req, res) => {
+  try {
+    const search = (req.query.search || '').trim();
+    const limit  = Math.min(parseInt(req.query.limit,  10) || 100, 500);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0,   0);
+    const pool   = await getPool();
+    const r      = pool.request();
+    const conds  = ['InActive = 0', 'Price1 > 0'];
+
+    if (search) {
+      const variants = barcodeVariants(search);
+      const orParts  = [];
+      variants.forEach((v, i) => {
+        r.input(`sv${i}`, sql.VarChar, `%${v}%`);
+        orParts.push(`UPC LIKE @sv${i}`, `SKU LIKE @sv${i}`);
+      });
+      r.input('ds', sql.VarChar, `%${search}%`);
+      orParts.push('Description LIKE @ds');
+      conds.push(`(${orParts.join(' OR ')})`);
+    }
+
+    const dept = parseInt(req.query.dept, 10);
+    if (!isNaN(dept)) { r.input('dept', sql.SmallInt, dept); conds.push('Department = @dept'); }
+
+    const where   = `WHERE ${conds.join(' AND ')}`;
+    const rowFrom = offset + 1, rowTo = offset + limit;
+    const result  = await r.query(`
+      WITH Paged AS (
+        SELECT UPC, Description, Department, Unit, Price1,
+               ROW_NUMBER() OVER (ORDER BY Description ASC) AS _rn
+        FROM AKPOS.dbo.Items ${where}
+      )
+      SELECT UPC, Description, Department, Unit, Price1
+      FROM Paged WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
+    `);
+
+    res.json(result.recordset.map(row => ({
+      id:              row.UPC,
+      name:            row.Description || row.UPC,
+      emoji:           DEPT_EMOJI[row.Department] || '📦',
+      category:        row.Department ? `dept-${row.Department}` : 'dept-0',
+      price:           parseFloat(row.Price1) || 0,
+      unit:            row.Unit || 'ea',
+      inStock:         true,
+      popular:         false,
+      costPrice:       0,
+      quantity:        0,
+      lowStockThreshold: 5,
+    })));
+  } catch (err) { console.error('[POS products]', err.message); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Write a completed POS sale to TransHeaders + TransLines
+app.post('/api/pos/transaction', requireApiKey, async (req, res) => {
+  const { items, total, paymentMethod, cashierId, timestamp } = req.body || {};
+  if (!Array.isArray(items) || !items.length || !(parseFloat(total) > 0)) {
+    return res.status(400).json({ error: 'items[] and total > 0 required' });
+  }
+  try {
+    const pool     = await getPool();
+    const numRes   = await pool.request().query(
+      `SELECT ISNULL(MAX(TransNo), 0) + 1 AS NextNo FROM AKPOS.dbo.TransHeaders`
+    );
+    const transNo  = numRes.recordset[0].NextNo;
+    const logged   = timestamp ? new Date(timestamp) : new Date();
+
+    await pool.request()
+      .input('tn',  sql.Int,      transNo)
+      .input('lg',  sql.DateTime, logged)
+      .input('tot', sql.Money,    parseFloat(total))
+      .query(`INSERT INTO AKPOS.dbo.TransHeaders (TransNo, Logged, TotalAfterTax, TransStatus)
+              VALUES (@tn, @lg, @tot, 'C')`);
+
+    for (const item of items) {
+      const sub = Math.round(parseFloat(item.subtotal) * 100) / 100;
+      const qty = parseFloat(item.qty) || 1;
+      await pool.request()
+        .input('tn',  sql.Int,        transNo)
+        .input('upc', sql.VarChar(20), String(item.id).slice(0, 20))
+        .input('qty', sql.Float,       qty)
+        .input('sub', sql.Money,       sub)
+        .query(`INSERT INTO AKPOS.dbo.TransLines (TransNo, LineType, UPC, Quantity, SubAfterTax, IsVoided)
+                VALUES (@tn, 'S', @upc, @qty, @sub, 0)`);
+    }
+
+    res.json({ ok: true, transNo });
+  } catch (err) { console.error('[POS txn]', err.message); res.status(500).json({ error: err.message }); }
+});
+
+// ── HTTPS bootstrap (camera needs a secure context) ──────────────────────
 function loadOrCreateCert() {
   const dir = path.join(__dirname, 'certs');
   const keyPath = path.join(dir, 'key.pem');
