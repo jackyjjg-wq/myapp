@@ -21,7 +21,10 @@
       "PowerShell(Stop-Process -Force)",
       "PowerShell(Start-Process -NoNewWindow -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"C:\\\\Users\\\\jacky\\\\OneDrive\\\\??\\\\MYAPP\")",
       "Bash(ls -t ~/.claude/projects/ | head -20)",
-      "Read(//c/Users/jacky/.claude/projects/**)"
+      "Read(//c/Users/jacky/.claude/projects/**)",
+      "PowerShell(pm2 logs akpos --lines 30 --nostream 2>&1)",
+      "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.pm2\\\\logs\\\\\" -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime | Sort-Object LastWriteTime -Descending | Select-Object -First 10)",
+      "Bash(netstat -ano)"
     ]
   }
 }
