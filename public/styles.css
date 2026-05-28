@@ -92,6 +92,7 @@ input[type="text"],
 input[type="password"],
 input[type="number"],
 input[type="search"],
+input[type="date"],
 input[type="datetime-local"] {
   width: 100%; font-size: 16px;
   padding: 11px 14px;
@@ -361,6 +362,7 @@ input[readonly] { opacity: .55; background: var(--surface2); }
 .form-row input[type="text"],
 .form-row input[type="number"],
 .form-row input[type="search"],
+.form-row input[type="date"],
 .form-row input[type="datetime-local"] {
   border-color: transparent;
   background: transparent;
@@ -662,6 +664,69 @@ input[readonly] { opacity: .55; background: var(--surface2); }
 /* ── Transactions home card ──────────────────────── */
 .home-option-icon--trans { background: rgba(99,102,241,.13); color: #6366f1; }
 
+/* ── Banking home card & view ────────────────────── */
+.home-option-icon--banking { background: rgba(16,163,92,.13); color: #10a35c; }
+.banking-screen { display: flex; flex-direction: column; }
+.banking-frame {
+  flex: 1; width: 100%; border: none;
+  background: var(--surface);
+}
+.banking-table-wrap {
+  flex: 1; overflow: auto; padding: 12px 16px 24px;
+}
+.banking-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+  border: 1px solid #444;
+}
+.banking-table th,
+.banking-table td {
+  padding: 7px 10px;
+  border: 1px solid #444;
+  white-space: nowrap;
+}
+.banking-table th { font-weight: 600; background: var(--surface2, #3a3a3c); }
+.banking-header-row th {
+  background: #1c3f6e; color: #fff;
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  border-color: #17355c;
+}
+.banking-total-row td {
+  font-weight: 700; background: var(--surface2, #3a3a3c);
+  border-top: 2px solid #666;
+}
+.banking-num { text-align: right; font-variant-numeric: tabular-nums; }
+.banking-tabs-row { padding: 10px 16px; }
+.banking-week-select {
+  width: 100%; max-width: 260px;
+  padding: 9px 12px; border-radius: 10px;
+  border: 1px solid #444;
+  background: var(--surface2, #3a3a3c); color: var(--text, #fff);
+  font-size: 15px; font-family: inherit;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238e8e93' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+  padding-right: 32px; cursor: pointer;
+}
+@media (prefers-color-scheme: light) {
+  .banking-week-select { background-color: #f2f2f7; border-color: #c6c6c8; color: #000; }
+}
+.banking-editable { cursor: text; }
+.banking-editable:hover { background: rgba(10,132,255,.10); }
+.banking-cell-input {
+  width: 100%; min-width: 50px; box-sizing: border-box;
+  background: transparent; border: none;
+  outline: 2px solid var(--blue, #0a84ff); border-radius: 3px;
+  color: inherit; font: inherit; padding: 0 2px;
+  text-align: inherit;
+}
+@media (prefers-color-scheme: light) {
+  .banking-table,
+  .banking-table th,
+  .banking-table td { border-color: #c6c6c8; }
+  .banking-table th { background: #f2f2f7; }
+  .banking-total-row td { background: #f2f2f7; border-top-color: #aaa; }
+}
+
 /* ── Transaction list card ───────────────────────── */
 .trans-icon-wrap {
   width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
@@ -822,6 +887,21 @@ input[readonly] { opacity: .55; background: var(--surface2); }
   transition: all 100ms; -webkit-tap-highlight-color: transparent;
 }
 .item-special-edit-btn:active { transform: scale(.96); }
+
+/* ── Payment media breakdown ─────────────────────── */
+.sales-media-card { padding: 0 !important; }
+.media-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 90px 54px;
+  align-items: center; gap: 10px;
+  padding: 11px 16px; border-bottom: 1px solid var(--sep);
+}
+.media-row:last-child { border-bottom: none; }
+.media-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.media-bar-wrap { height: 6px; background: var(--sep); border-radius: 3px; overflow: hidden; }
+.media-bar { height: 100%; background: var(--blue); border-radius: 3px; transition: width 400ms ease; }
+.media-amount { font-size: 14px; font-weight: 600; color: var(--text); text-align: right; }
+.media-count { font-size: 12px; color: var(--text3); text-align: right; }
 
 /* ── Trending items ──────────────────────────────── */
 .sales-trending-card { padding: 0 !important; }
@@ -1002,6 +1082,125 @@ input[readonly] { opacity: .55; background: var(--surface2); }
   /* Range tabs */
   .range-tabs { padding-bottom: 16px; }
   .range-tab { padding: 8px 18px; font-size: 14px; }
+}
+
+/* ── Toast close button ──────────────────────────── */
+.toast-close {
+  background: none; border: none; cursor: pointer;
+  color: inherit; opacity: .55; font-size: 18px; line-height: 1;
+  padding: 0 0 0 6px; margin-left: auto; flex-shrink: 0;
+  transition: opacity 100ms; -webkit-tap-highlight-color: transparent;
+}
+.toast-close:hover { opacity: 1; }
+
+/* ── Confirm dialog ─────────────────────────────── */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: fadeIn 120ms ease;
+}
+.confirm-sheet {
+  width: 100%; max-width: 480px;
+  background: var(--surface); border-radius: 16px 16px 0 0;
+  padding: 24px 20px 20px;
+  box-shadow: 0 -4px 24px rgba(0,0,0,.18);
+  animation: slideUp 200ms cubic-bezier(.22,1,.36,1);
+}
+.confirm-title {
+  font-size: 17px; font-weight: 700; color: var(--text);
+  margin: 0 0 8px; text-align: center;
+}
+.confirm-msg {
+  font-size: 14px; color: var(--text2); line-height: 1.5;
+  margin: 0 0 20px; text-align: center;
+}
+.confirm-actions {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.confirm-btn {
+  padding: 13px; border-radius: 12px; border: none;
+  font: 600 15px/1 inherit; cursor: pointer;
+  transition: opacity 100ms, transform 100ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.confirm-btn:active { transform: scale(.97); opacity: .85; }
+.confirm-btn--cancel { background: var(--sep); color: var(--text2); }
+.confirm-btn--ok     { background: var(--blue); color: #fff; }
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* ── Google Sheets sync button ───────────────────── */
+.sheets-sync-row {
+  padding: 0 16px 4px;
+  display: flex; justify-content: flex-end;
+}
+.sheets-sync-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 999px;
+  border: 1.5px solid #1a7f3c; background: #e8f5ec;
+  color: #1a7f3c; font: 600 13px/1 inherit; cursor: pointer;
+  transition: all 100ms; -webkit-tap-highlight-color: transparent;
+}
+.sheets-sync-btn:hover  { background: #1a7f3c; color: #fff; }
+.sheets-sync-btn:active { transform: scale(.96); }
+.sheets-sync-btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+/* ── Empty state action button ───────────────────── */
+.empty-action-btn {
+  margin-top: 4px; padding: 9px 24px; border-radius: 999px;
+  border: 1.5px solid var(--blue); background: var(--blue-bg);
+  color: var(--blue); font: 600 14px/1 inherit; cursor: pointer;
+  transition: all 100ms; -webkit-tap-highlight-color: transparent;
+}
+.empty-action-btn:hover  { background: var(--blue); color: #fff; }
+.empty-action-btn:active { transform: scale(.96); }
+
+/* ── Inventory filter bar ────────────────────────── */
+.list-filter-bar {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+}
+.dept-chips-scroller {
+  flex: 1; display: flex; gap: 6px; overflow-x: auto;
+  scrollbar-width: none; padding: 2px 0;
+}
+.dept-chips-scroller::-webkit-scrollbar { display: none; }
+.dept-chip {
+  flex-shrink: 0; padding: 6px 14px; border-radius: 999px;
+  border: 1.5px solid var(--sep-s); background: var(--surface);
+  color: var(--text2); font: 500 13px/1 inherit; cursor: pointer;
+  transition: all 100ms; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.dept-chip:active { transform: scale(.96); }
+.dept-chip.active { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+.dept-chip--active-only {
+  flex-shrink: 0; background: var(--surface2); color: var(--text3);
+  border-color: var(--sep);
+}
+.dept-chip--active-only.active { background: var(--green); border-color: var(--green); color: #fff; }
+
+/* ── Specials urgency badge ──────────────────────── */
+.sp-expires-badge {
+  display: inline-block; width: fit-content;
+  font-size: 11px; font-weight: 600; color: #f59e0b;
+  background: rgba(245,158,11,.12); border-radius: 4px;
+  padding: 2px 8px;
+}
+
+/* ── Transaction line — tappable ─────────────────── */
+.trans-line-tappable {
+  cursor: pointer; transition: background 80ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.trans-line-tappable:hover  { background: var(--surface2); }
+.trans-line-tappable:active { background: var(--sep); }
+.trans-line-arrow {
+  font-size: 20px; color: var(--sep-s); font-weight: 300;
+  line-height: 1; flex-shrink: 0; align-self: center;
 }
 
 /* ── Scan success flash ───────────────────────────── */

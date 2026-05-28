@@ -6,6 +6,19 @@ const http = require('http');
 const https = require('https');
 const sql = require('mssql');
 const { COLUMNS, LIST_COLUMNS, WRITABLE } = require('./columns');
+const rateLimit = require('express-rate-limit');
+const { google } = require('googleapis');
+
+const SHEETS_SPREADSHEET_ID = '13tQwFGWRwWKWIqu8cuo7PqSWLb6PMMDAlS4FE2c3vQc';
+const SHEETS_CREDS_PATH = path.join(__dirname, 'google-credentials.json');
+
+function getSheetsClient() {
+  const auth = new google.auth.GoogleAuth({
+    keyFile: SHEETS_CREDS_PATH,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+  return google.sheets({ version: 'v4', auth });
+}
 
 // Try common barcode variations: original, with-leading-zero, without-leading-zero.
 // Handles UPC-A (12 digits) <-> EAN-13 (13 digits) mismatches that confuse the scanner.
@@ -21,9 +34,32 @@ function barcodeVariants(code) {
   return [...variants];
 }
 
+const HTTP_PORT  = parseInt(process.env.PORT, 10) || 3000;
+const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;
+let httpsRunning = false;
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, limit: 20,
+  standardHeaders: 'draft-7', legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+});
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, limit: 300,
+  standardHeaders: 'draft-7', legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+});
+
 const app = express();
 app.use(express.json({ limit: '1mb' }));
+app.use((req, res, next) => {
+  if (!req.secure && httpsRunning) {
+    return res.redirect(301, `https://${req.hostname}:${HTTPS_PORT}${req.url}`);
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/api/auth', authLimiter);
+app.use('/api', apiLimiter);
 
 const sqlConfig = {
   user: process.env.SQL_USER,
@@ -149,7 +185,7 @@ app.get('/api/health', async (_req, res) => {
     const pool = await getPool();
     await pool.request().query('SELECT 1 AS ok');
     res.json({ status: 'ok', db: 'connected' });
-  } catch (err) { res.status(500).json({ status: 'error', message: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ status: 'error', db: 'unreachable' }); }
 });
 
 app.post('/api/auth/check', requireApiKey, (_req, res) => res.json({ ok: true }));
@@ -157,6 +193,188 @@ app.post('/api/auth/check', requireApiKey, (_req, res) => res.json({ ok: true })
 // Schema for the frontend
 app.get('/api/schema', requireApiKey, (_req, res) => {
   res.json({ columns: COLUMNS });
+});
+
+// Distinct units actually in use
+app.get('/api/units', requireApiKey, async (_req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`
+      SELECT DISTINCT RTRIM(Unit) AS unit
+      FROM AKPOS.dbo.Items
+      WHERE Unit IS NOT NULL AND RTRIM(Unit) <> ''
+      ORDER BY unit
+    `);
+    res.json(r.recordset.map(row => row.unit));
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Distinct departments that have items, with names from Departments table
+app.get('/api/departments', requireApiKey, async (_req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query(`
+      SELECT DISTINCT I.Department AS id,
+             ISNULL(RTRIM(D.Description), CAST(I.Department AS VARCHAR(10))) AS name
+      FROM AKPOS.dbo.Items I
+      LEFT JOIN AKPOS.dbo.Departments D ON D.ID = I.Department
+      WHERE I.Department IS NOT NULL
+      ORDER BY I.Department
+    `);
+    res.json(r.recordset);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// List recent weekly tab names (last 12 weeks, newest first)
+app.get('/api/banking/tabs', requireApiKey, async (_req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEETS_SPREADSHEET_ID });
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 84);
+    const ceiling = new Date(); ceiling.setDate(ceiling.getDate() + 7);
+    const tabs = meta.data.sheets
+      .map(s => s.properties.title)
+      .filter(t => {
+        const m = t.match(/^W_(\d{4}-\d{2}-\d{2})$/);
+        if (!m) return false;
+        const [y,mn,d] = m[1].split('-').map(Number);
+        const dt = new Date(y, mn-1, d);
+        return dt >= cutoff && dt <= ceiling;
+      })
+      .reverse();
+    res.json(tabs);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Return rows for a specific weekly tab
+app.get('/api/banking/tab/:name', requireApiKey, async (req, res) => {
+  const name = req.params.name;
+  if (!/^W_\d{4}-\d{2}-\d{2}$/.test(name)) return res.status(400).json({ error: 'Invalid tab name' });
+  try {
+    const sheets = getSheetsClient();
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEETS_SPREADSHEET_ID,
+      range: `'${name}'!A1:I20`,
+    });
+    res.json(r.data.values || []);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Update a single cell in a weekly tab
+app.post('/api/banking/update', requireApiKey, async (req, res) => {
+  const { tab, cell, value } = req.body || {};
+  if (!tab || !/^W_\d{4}-\d{2}-\d{2}$/.test(tab)) return res.status(400).json({ error: 'Invalid tab' });
+  if (!cell || !/^[A-Z]+\d+$/.test(cell)) return res.status(400).json({ error: 'Invalid cell ref' });
+  try {
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEETS_SPREADSHEET_ID,
+      range: `'${tab}'!${cell}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[value]] },
+    });
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// Sync cash + distinct transaction count into weekly tabs matching the requested range.
+// Each tab is named W_YYYY-MM-DD. Writes cash to col C, trans count to col H.
+app.post('/api/sheets/sync', requireApiKey, async (req, res) => {
+  try {
+    const sheets = getSheetsClient();
+    const parseDateLocal = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); };
+
+    // Determine date range from the request body (mirrors the sales dashboard selection)
+    const { range = 'week', from: qFrom, to: qTo } = req.body || {};
+    const { from: rangeFrom, to: rangeTo } = salesDateRange(range, qFrom, qTo);
+
+    // Find tabs named W_YYYY-MM-DD whose week-ending date falls within or after rangeFrom
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEETS_SPREADSHEET_ID });
+    // A tab covers Mon–Sun ending on the tab date.
+    // Include it if the week overlaps the selected range: tabStart < rangeTo AND tabEnd >= rangeFrom
+    const recentTabs = meta.data.sheets
+      .map(s => s.properties.title)
+      .filter(title => {
+        const m = title.match(/^W_(\d{4}-\d{2}-\d{2})$/);
+        if (!m) return false;
+        const tabEnd = parseDateLocal(m[1]);
+        const tabStart = new Date(tabEnd); tabStart.setDate(tabStart.getDate() - 6);
+        return tabStart < rangeTo && tabEnd >= rangeFrom;
+      });
+
+    if (!recentTabs.length) return res.json({ updated: 0, message: 'No recent week tabs found' });
+
+    // Batch-read column B from all recent tabs in one call
+    const batchRead = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId: SHEETS_SPREADSHEET_ID,
+      ranges: recentTabs.map(t => `'${t}'!B:B`),
+    });
+
+    // Collect date rows that fall within the selected range
+    const tabDateRows = [];
+    for (let t = 0; t < recentTabs.length; t++) {
+      const colB = batchRead.data.valueRanges[t].values || [];
+      for (let i = 0; i < colB.length; i++) {
+        const cell = ((colB[i] || [])[0] || '').toString().trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(cell)) {
+          const d = parseDateLocal(cell);
+          if (d >= rangeFrom && d < rangeTo) {
+            tabDateRows.push({ tab: recentTabs[t], rowNum: i + 1, dateStr: cell });
+          }
+        }
+      }
+    }
+    if (!tabDateRows.length) return res.json({ updated: 0, message: 'No date rows found in selected range' });
+
+    // Query AKPOS once for the whole date range.
+    // CAST(Logged AS date) groups by local NZ date, avoiding UTC drift.
+    // Value - Change = net cash received (excludes change given back to customer).
+    // ROUND(..., -1) rounds to nearest 10.
+    const allDates = [...new Set(tabDateRows.map(r => r.dateStr))].sort();
+    const minDate = parseDateLocal(allDates[0]);
+    const maxDate = parseDateLocal(allDates[allDates.length - 1]);
+    maxDate.setDate(maxDate.getDate() + 1);
+
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('from', sql.DateTime, toSqlDate(minDate))
+      .input('to',   sql.DateTime, toSqlDate(maxDate))
+      .query(`
+        SELECT
+          CAST(TH.Logged AS date)                                                              AS day,
+          COUNT(DISTINCT TH.TransNo)                                                           AS TransCount,
+          ISNULL(ROUND(SUM(CASE WHEN TP.MediaName = 'CASH' THEN TP.Value - TP.[Change] ELSE 0 END), -1), 0) AS CashTotal
+        FROM AKPOS.dbo.TransHeaders TH
+        INNER JOIN AKPOS.dbo.TransPayments TP ON TP.TransNo = TH.TransNo
+        WHERE TH.TransStatus = 'C'
+          AND TH.Logged >= @from AND TH.Logged < @to
+        GROUP BY CAST(TH.Logged AS date)
+      `);
+
+    // mssql returns SQL date type as a UTC-midnight JS Date — extract using UTC methods
+    const pad2 = n => String(n).padStart(2, '0');
+    const salesByDate = {};
+    for (const row of result.recordset) {
+      const d = row.day;
+      const key = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())}`;
+      salesByDate[key] = row;
+    }
+
+    // Batch-write to the correct tab + row for each date
+    const writeData = [];
+    for (const { tab, rowNum, dateStr } of tabDateRows) {
+      const s = salesByDate[dateStr] || { CashTotal: 0, TransCount: 0 };
+      writeData.push({ range: `'${tab}'!C${rowNum}`, values: [[Math.round(s.CashTotal)]] });
+      writeData.push({ range: `'${tab}'!H${rowNum}`, values: [[s.TransCount]] });
+    }
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEETS_SPREADSHEET_ID,
+      requestBody: { valueInputOption: 'RAW', data: writeData },
+    });
+
+    const tabsUpdated = [...new Set(tabDateRows.map(r => r.tab))];
+    res.json({ updated: tabDateRows.length, tabs: tabsUpdated });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // List / search — barcode-tolerant.
@@ -169,7 +387,7 @@ app.get('/api/items', requireApiKey, async (req, res) => {
     const offset = Math.max(parseInt(req.query.offset, 10) || 0,  0);
     const pool = await getPool();
     const request = pool.request();
-    let where = '';
+    const conditions = [];
     if (search) {
       const variants = barcodeVariants(search);
       const orParts = [];
@@ -180,8 +398,15 @@ app.get('/api/items', requireApiKey, async (req, res) => {
       });
       request.input('descSearch', sql.VarChar, `%${search}%`);
       orParts.push('Description LIKE @descSearch');
-      where = `WHERE ${orParts.join(' OR ')}`;
+      conditions.push(`(${orParts.join(' OR ')})`);
     }
+    const dept = (req.query.dept || '').trim();
+    if (dept) {
+      const deptNum = parseInt(dept, 10);
+      if (!isNaN(deptNum)) { request.input('deptFilter', sql.SmallInt, deptNum); conditions.push('Department = @deptFilter'); }
+    }
+    if (req.query.inactive === '0') conditions.push('InActive = 0');
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const cols    = LIST_COLUMNS.join(', ');
     const rowFrom = offset + 1;
     const rowTo   = offset + limit;
@@ -194,7 +419,7 @@ app.get('/api/items', requireApiKey, async (req, res) => {
       SELECT ${cols} FROM Paged WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
     `);
     res.json(result.recordset.map(fixDates));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Full row (all columns)
@@ -207,7 +432,7 @@ app.get('/api/items/:upc', requireApiKey, async (req, res) => {
       .query(`SELECT ${cols} FROM AKPOS.dbo.Items WHERE UPC = @upc`);
     if (result.recordset.length === 0) return res.status(404).json({ error: 'Item not found' });
     res.json(fixDates(result.recordset[0]));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Fast lookup for the scanner — barcode-tolerant.
@@ -231,7 +456,7 @@ app.get('/api/items/:upc/lookup', requireApiKey, async (req, res) => {
     `);
     if (result.recordset.length === 0) return res.json({ exists: false });
     res.json({ exists: true, item: result.recordset[0] });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Insert
@@ -258,7 +483,7 @@ app.post('/api/items', requireApiKey, async (req, res) => {
       VALUES (${placeholders.join(', ')})
     `);
     res.status(201).json({ ok: true, UPC: values.UPC });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Update (PATCH semantics — any subset of writable cols; UPC change supported)
@@ -292,7 +517,7 @@ app.put('/api/items/:upc', requireApiKey, async (req, res) => {
     const result = await request.query(`UPDATE AKPOS.dbo.Items SET ${set.join(', ')} WHERE UPC = @upc`);
     if (result.rowsAffected[0] === 0) return res.status(404).json({ error: 'Item not found' });
     res.json({ ok: true, UPC: newUPC || req.params.upc });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // ---- Sales routes ----
@@ -346,6 +571,30 @@ function salesDateRange(range, qFrom, qTo) {
   }
 }
 
+// Payment media breakdown for a date range
+app.get('/api/sales/media', requireApiKey, async (req, res) => {
+  const { from, to } = salesDateRange(req.query.range || 'today', req.query.from, req.query.to);
+  try {
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('from', sql.DateTime, toSqlDate(from))
+      .input('to',   sql.DateTime, toSqlDate(to))
+      .query(`
+        SELECT
+          TP.MediaName                           AS media,
+          SUM(TP.Value - TP.[Change])            AS amount,
+          COUNT(DISTINCT TH.TransNo)             AS transCount
+        FROM AKPOS.dbo.TransHeaders TH
+        INNER JOIN AKPOS.dbo.TransPayments TP ON TP.TransNo = TH.TransNo
+        WHERE TH.TransStatus = 'C'
+          AND TH.Logged >= @from AND TH.Logged < @to
+        GROUP BY TP.MediaName
+        ORDER BY amount DESC
+      `);
+    res.json(r.recordset);
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
+});
+
 // Summary stats for a date range + previous period comparison
 app.get('/api/sales/summary', requireApiKey, async (req, res) => {
   const { from, to } = salesDateRange(req.query.range || 'today', req.query.from, req.query.to);
@@ -395,7 +644,7 @@ app.get('/api/sales/summary', requireApiKey, async (req, res) => {
     res.json({ revenue: rev, transCount: cnt, avgPerTrans: cnt > 0 ? rev / cnt : 0,
                prevRevenue: pRev, prevTransCount: pCnt,
                itemsSold: itm, prevItemsSold: pItm });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Last 6 months aggregated by month
@@ -415,7 +664,7 @@ app.get('/api/sales/monthly', requireApiKey, async (req, res) => {
       ORDER BY yr ASC, mo ASC
     `);
     res.json(r.recordset);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Hourly (today/yesterday) or daily (week/month) revenue trend
@@ -467,7 +716,7 @@ app.get('/api/sales/trend', requireApiKey, async (req, res) => {
     for (const row of rSold.recordset) soldMap[row.period] = Number(row.ItemsSold) || 0;
     const rows = r.recordset.map(row => ({ ...row, ItemsSold: soldMap[row.period] || 0 }));
     res.json({ mode: isHourly ? 'hourly' : 'daily', rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Top-selling items by quantity for a given range, with pagination
@@ -505,7 +754,7 @@ app.get('/api/sales/trending', requireApiKey, async (req, res) => {
         WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
       `);
     res.json(r.recordset);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // ---- Specials routes ----
@@ -595,19 +844,21 @@ app.get('/api/specials', requireApiKey, async (req, res) => {
       FROM P WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
     `);
     res.json(r.recordset.map(fixDates));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Full row for the edit form
 app.get('/api/specials/:id', requireApiKey, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid special ID' });
   try {
     const pool = await getPool();
     const r = await pool.request()
-      .input('id', sql.Int, parseInt(req.params.id, 10))
+      .input('id', sql.Int, id)
       .query(`SELECT * FROM AKPOS.dbo.Specials WHERE ID = @id`);
     if (!r.recordset.length) return res.status(404).json({ error: 'Special not found' });
     res.json(fixDates(r.recordset[0]));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Create special (auto-incrementing ID)
@@ -627,24 +878,26 @@ app.post('/api/specials', requireApiKey, async (req, res) => {
     const ph = ['@id', ...Object.keys(values).map(c => `@${c}`), 'GETDATE()'];
     await req2.query(`INSERT INTO AKPOS.dbo.Specials (${cols.join(',')}) VALUES (${ph.join(',')})`);
     res.status(201).json({ ok: true, id: newId });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Update special (PATCH semantics)
 app.put('/api/specials/:id', requireApiKey, async (req, res) => {
+  const spId = parseInt(req.params.id, 10);
+  if (isNaN(spId)) return res.status(400).json({ error: 'Invalid special ID' });
   const { values, errors } = validateSpBody(req.body);
   if (errors.length) return res.status(400).json({ error: errors.join('; ') });
   const cols = Object.keys(values);
   if (!cols.length) return res.status(400).json({ error: 'No fields provided' });
   try {
     const pool = await getPool();
-    const req2 = pool.request().input('id', sql.Int, parseInt(req.params.id, 10));
+    const req2 = pool.request().input('id', sql.Int, spId);
     for (const [c, v] of Object.entries(values)) req2.input(c, spSqlType(c), v);
     const set = [...cols.map(c => `${c} = @${c}`), 'Updated = GETDATE()'];
     const r = await req2.query(`UPDATE AKPOS.dbo.Specials SET ${set.join(', ')} WHERE ID = @id`);
     if (!r.rowsAffected[0]) return res.status(404).json({ error: 'Special not found' });
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Option B — active specials matching a specific item UPC
@@ -663,7 +916,7 @@ app.get('/api/items/:upc/specials', requireApiKey, async (req, res) => {
         ORDER BY Value DESC
       `);
     res.json(r.recordset.map(fixDates));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // ---- Transaction routes ----
@@ -705,11 +958,12 @@ app.get('/api/transactions', requireApiKey, async (req, res) => {
       FROM P WHERE _rn BETWEEN ${rowFrom} AND ${rowTo}
     `);
     res.json(r.recordset.map(fixDates));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 
 app.get('/api/transactions/:transNo', requireApiKey, async (req, res) => {
+  if (!/^\d+$/.test(req.params.transNo)) return res.status(400).json({ error: 'Invalid transaction number' });
   try {
     const pool    = await getPool();
     const t       = req.params.transNo;
@@ -729,7 +983,7 @@ app.get('/api/transactions/:transNo', requireApiKey, async (req, res) => {
     ]);
     if (!hRes.recordset.length) return res.status(404).json({ error: 'Transaction not found' });
     res.json({ ...fixDates(hRes.recordset[0]), lines: lRes.recordset.map(fixDates) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // ---- HTTPS bootstrap (camera needs a secure context) ----
@@ -761,9 +1015,6 @@ function loadOrCreateCert() {
   return { key: pems.private, cert: pems.cert };
 }
 
-const HTTP_PORT = parseInt(process.env.PORT, 10) || 3000;
-const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 3443;
-
 http.createServer(app).listen(HTTP_PORT, '0.0.0.0', () => {
   console.log(`HTTP  : http://0.0.0.0:${HTTP_PORT}  (camera scanner will NOT work over HTTP on phones)`);
 });
@@ -771,8 +1022,13 @@ http.createServer(app).listen(HTTP_PORT, '0.0.0.0', () => {
 try {
   const creds = loadOrCreateCert();
   https.createServer(creds, app).listen(HTTPS_PORT, '0.0.0.0', () => {
+    httpsRunning = true;
     console.log(`HTTPS : https://0.0.0.0:${HTTPS_PORT}  (use this from your phone for the scanner)`);
   });
 } catch (err) {
   console.error('Failed to start HTTPS server:', err.message);
 }
+
+getPool().catch(err => {
+  console.warn('DB: could not connect at startup —', err.message, '(will retry on first request)');
+});

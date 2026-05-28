@@ -14,6 +14,34 @@
 
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
+  <!-- ═══ BANKING SUMMARY ══════════════════════════ -->
+  <section id="bankingView" class="screen banking-screen" hidden>
+    <header class="topbar">
+      <button id="bankingBackBtn" class="ghost-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </button>
+      <div class="topbar-center"><div class="topbar-title">Banking Summary</div></div>
+      <div style="width:40px"></div>
+    </header>
+    <div id="bankingTabsRow" class="banking-tabs-row"></div>
+    <div id="bankingLoading" class="sales-loading" hidden><span class="spinner"></span></div>
+    <div id="bankingTableWrap" class="banking-table-wrap"></div>
+  </section>
+
+  <!-- Confirmation dialog -->
+  <div id="confirmOverlay" class="confirm-overlay" hidden>
+    <div class="confirm-sheet">
+      <p class="confirm-title" id="confirmTitle"></p>
+      <p class="confirm-msg" id="confirmMsg"></p>
+      <div class="confirm-actions">
+        <button id="confirmCancel" class="confirm-btn confirm-btn--cancel">Cancel</button>
+        <button id="confirmOk"     class="confirm-btn confirm-btn--ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══ LOGIN ═══════════════════════════════════════ -->
   <section id="loginView" class="screen-center">
     <div class="login-card">
@@ -60,23 +88,6 @@
           </svg>
         </div>
         <span id="homeBrandName" class="home-brand-text">AKPOS Items</span>
-      </div>
-
-      <div id="homeStats" class="home-stats" hidden>
-        <div class="home-stat">
-          <div class="home-stat-val" id="homeStatRevenue">—</div>
-          <div class="home-stat-lbl" id="homeStatTodayLbl">Today's Sales</div>
-        </div>
-        <div class="home-stat-sep"></div>
-        <div class="home-stat">
-          <div class="home-stat-val" id="homeStatTrans">—</div>
-          <div class="home-stat-lbl" id="homeStatTransLbl">Transactions</div>
-        </div>
-        <div class="home-stat-sep"></div>
-        <div class="home-stat">
-          <div class="home-stat-val home-stat-change" id="homeStatChange">—</div>
-          <div class="home-stat-lbl" id="homeStatChangeLbl">vs Yesterday</div>
-        </div>
       </div>
 
       <div class="home-options">
@@ -133,6 +144,22 @@
           <div class="home-option-body">
             <div class="home-option-title" id="homeTransBtnTitle">Transactions</div>
             <div class="home-option-sub"   id="homeTransSub">Look up receipts &amp; history</div>
+          </div>
+          <span class="home-option-arrow">›</span>
+        </button>
+
+        <button id="homeBankingBtn" class="home-option-card">
+          <div class="home-option-icon home-option-icon--banking">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <line x1="3" y1="9" x2="21" y2="9"/>
+              <line x1="3" y1="15" x2="21" y2="15"/>
+              <line x1="9" y1="9" x2="9" y2="21"/>
+            </svg>
+          </div>
+          <div class="home-option-body">
+            <div class="home-option-title">Banking Summary</div>
+            <div class="home-option-sub">View weekly banking sheet</div>
           </div>
           <span class="home-option-arrow">›</span>
         </button>
@@ -200,6 +227,11 @@
         </svg>
         <span id="scanBtnText">Scan</span>
       </button>
+    </div>
+
+    <div id="listFilterBar" class="list-filter-bar" hidden>
+      <div id="deptChips" class="dept-chips-scroller"></div>
+      <button id="activeOnlyBtn" class="dept-chip dept-chip--active-only" title="Show active items only">Active only</button>
     </div>
 
     <ul id="itemsList" class="list"></ul>
@@ -294,6 +326,13 @@
       </div>
     </div>
 
+    <div class="sheets-sync-row">
+      <button id="sheetsSyncBtn" class="sheets-sync-btn">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Sync to Google Sheets
+      </button>
+    </div>
+
     <div id="salesLoading" class="sales-loading" hidden><span class="spinner"></span></div>
 
     <div id="salesStats" class="sales-stats-grid" hidden>
@@ -315,6 +354,13 @@
       <div class="stat-card stat-card--full">
         <div class="stat-value stat-value--sm" id="statAvg">—</div>
         <div class="stat-label" id="statAvgLabel">Avg / Sale</div>
+      </div>
+    </div>
+
+    <div id="salesMedia" hidden>
+      <div class="form-section-title">Payment Breakdown</div>
+      <div class="form-group sales-media-card">
+        <div id="mediaList"></div>
       </div>
     </div>
 
@@ -350,6 +396,8 @@
         <line x1="36" y1="36" x2="36" y2="20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" opacity=".25"/>
       </svg>
       <p class="empty-title" id="salesEmptyTitle">No sales data for this period</p>
+      <p class="empty-sub" id="salesEmptyHint">Try a wider date range</p>
+      <button id="salesEmptyWeekBtn" class="empty-action-btn">This Week</button>
     </div>
   </section>
 
@@ -476,11 +524,11 @@
       <div class="form-group">
         <div class="form-row">
           <span class="field-label" id="spFromDateLabel">From</span>
-          <input id="spFromDate" type="datetime-local" />
+          <input id="spFromDate" type="date" />
         </div>
         <div class="form-row">
           <span class="field-label" id="spToDateLabel">Until</span>
-          <input id="spToDate" type="datetime-local" />
+          <input id="spToDate" type="date" />
         </div>
         <div class="form-row">
           <span class="field-label" id="spDayLabel">Day</span>

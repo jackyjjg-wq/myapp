@@ -156,7 +156,7 @@
     apiKeyInput: $('apiKeyInput'), rememberMe: $('rememberMe'),
     loginBtn: $('loginBtn'),
     homeInventoryBtn: $('homeInventoryBtn'), homeSalesBtn: $('homeSalesBtn'),
-    homeSpecialsBtn: $('homeSpecialsBtn'), homeTransBtn: $('homeTransBtn'),
+    homeSpecialsBtn: $('homeSpecialsBtn'), homeTransBtn: $('homeTransBtn'), homeBankingBtn: $('homeBankingBtn'),
     homeLogoutBtn: $('homeLogoutBtn'),
     listHomeBtn: $('listHomeBtn'), logoutBtn: $('logoutBtn'),
     searchInput: $('searchInput'), searchClearBtn: $('searchClearBtn'), searchScanBtn: $('searchScanBtn'),
@@ -165,7 +165,7 @@
     loadMoreSpinner: $('loadMoreSpinner'), listSentinel: $('listSentinel'),
     backBtn: $('backBtn'), editTitle: $('editTitle'), editSub: $('editSub'),
     editForm: $('editForm'), formFields: $('formFields'), saveBtn: $('saveBtn'), cancelBtn: $('cancelBtn'),
-    salesBackBtn: $('salesBackBtn'), salesRangeTabs: $('salesRangeTabs'),
+    salesBackBtn: $('salesBackBtn'), salesRangeTabs: $('salesRangeTabs'), sheetsSyncBtn: $('sheetsSyncBtn'),
     salesLoading: $('salesLoading'), salesStats: $('salesStats'), salesMonthly: $('salesMonthly'),
     salesEmpty: $('salesEmpty'),
     toasts: $('toasts'),
@@ -252,9 +252,6 @@
     $('homeSalesBtnTitle').textContent   = t('homeSales');
     $('homeSalesSub').textContent        = t('homeSalesSub');
     $('homeLogoutText').textContent      = t('homeSignOut');
-    $('homeStatTodayLbl').textContent    = t('homeStatToday');
-    $('homeStatTransLbl').textContent    = t('homeStatTrans');
-    $('homeStatChangeLbl').textContent   = t('homeStatVs');
 
     // List
     $('topbarName').textContent      = t('inventoryTitle');
@@ -358,27 +355,23 @@
     els.specialEditView.hidden = name !== 'specialEdit';
     $('transView').hidden      = name !== 'trans';
     $('transDetailView').hidden = name !== 'transDetail';
-    if (name === 'home' && apiKey) loadHomeStats();
+    $('bankingView').hidden    = name !== 'banking';
   }
 
-  async function loadHomeStats() {
-    const statsEl = $('homeStats');
-    if (!statsEl) return;
-    try {
-      const d = await api('/api/sales/summary?range=today');
-      $('homeStatRevenue').textContent = fmt$(d.revenue);
-      $('homeStatTrans').textContent   = String(d.transCount);
-      const chEl = $('homeStatChange');
-      if (d.prevRevenue > 0) {
-        const pct = Math.round((d.revenue - d.prevRevenue) / d.prevRevenue * 100);
-        chEl.textContent  = (pct >= 0 ? '+' : '') + pct + '%';
-        chEl.className    = 'home-stat-val home-stat-change ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat');
-      } else {
-        chEl.textContent = '—';
-        chEl.className   = 'home-stat-val home-stat-change';
-      }
-      statsEl.hidden = false;
-    } catch { /* non-critical — silently ignore */ }
+  /* ── Confirm dialog ──────────────────────────── */
+  function showConfirm(title, msg) {
+    return new Promise(resolve => {
+      $('confirmTitle').textContent = title;
+      $('confirmMsg').textContent   = msg;
+      $('confirmOverlay').hidden    = false;
+      const cleanup = ok => {
+        $('confirmOverlay').hidden = true;
+        resolve(ok);
+      };
+      $('confirmOk').onclick     = () => cleanup(true);
+      $('confirmCancel').onclick = () => cleanup(false);
+      $('confirmOverlay').onclick = e => { if (e.target === $('confirmOverlay')) cleanup(false); };
+    });
   }
 
   /* ── Toast ────────────────────────────────────── */
@@ -386,11 +379,28 @@
     const el = document.createElement('div');
     el.className = `toast ${kind}`.trim();
     const dot = document.createElement('span'); dot.className = 'toast-dot';
-    const txt = document.createElement('span'); txt.textContent = msg;
+    const txt = document.createElement('span'); txt.className = 'toast-txt'; txt.textContent = msg;
     el.append(dot, txt);
+    if (kind === 'error') {
+      const close = document.createElement('button');
+      close.className = 'toast-close'; close.setAttribute('aria-label', 'Dismiss'); close.textContent = '×';
+      close.addEventListener('click', () => {
+        el.style.transition = 'opacity 150ms, transform 150ms';
+        el.style.opacity = '0'; el.style.transform = 'translateY(-8px)';
+        setTimeout(() => el.remove(), 160);
+      });
+      el.appendChild(close);
+    } else {
+      setTimeout(() => { el.style.transition = 'opacity 200ms, transform 200ms'; el.style.opacity = '0'; el.style.transform = 'translateY(-8px)'; }, 2800);
+      setTimeout(() => el.remove(), 3100);
+    }
     els.toasts.appendChild(el);
-    setTimeout(() => { el.style.transition = 'opacity 200ms, transform 200ms'; el.style.opacity = '0'; el.style.transform = 'translateY(-8px)'; }, 2800);
-    setTimeout(() => el.remove(), 3100);
+  }
+
+  function getDeptName(id) {
+    if (id == null) return null;
+    const d = (cachedDepts || []).find(d => d.id === id || d.id === Number(id));
+    return d ? d.name : String(id);
   }
 
   function fmt$(v) {
@@ -444,13 +454,21 @@
   /* ── Schema ───────────────────────────────────── */
   async function ensureSchema() {
     if (schema) return;
-    schema = await api('/api/schema');
+    const [schemaData, depts, units] = await Promise.all([
+      api('/api/schema'),
+      api('/api/departments').catch(() => []),
+      api('/api/units').catch(() => []),
+    ]);
+    schema = schemaData;
+    if (cachedDepts === null) cachedDepts = depts;
+    if (cachedUnits === null) cachedUnits = units;
     buildForm();
   }
 
   /* ── Home navigation ─────────────────────────── */
   els.homeInventoryBtn.addEventListener('click', () => {
-    showView('list'); loadItems('');
+    listDept = ''; listActiveOnly = false;
+    showView('list'); loadItems(''); loadDeptChips();
   });
   els.homeSalesBtn.addEventListener('click', () => {
     showView('sales'); loadSales('today');
@@ -461,6 +479,29 @@
   });
   els.listHomeBtn.addEventListener('click', () => showView('home'));
   els.salesBackBtn.addEventListener('click', () => showView('home'));
+
+  els.sheetsSyncBtn.addEventListener('click', async () => {
+    const rangeLabel = $(`[data-range="${currentSalesRange}"]`)?.textContent || currentSalesRange;
+    const ok = await showConfirm(
+      'Sync to Google Sheets',
+      `Write cash & transaction count for "${rangeLabel}" to the banking summary sheet?`
+    );
+    if (!ok) return;
+    const btn = els.sheetsSyncBtn;
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin-right:6px"></span>Syncing…';
+    try {
+      const body = { range: currentSalesRange, from: salesCustomFrom, to: salesCustomTo };
+      const result = await api('/api/sheets/sync', { method: 'POST', body: JSON.stringify(body) });
+      toast(`Synced ${result.updated} day${result.updated !== 1 ? 's' : ''} to Google Sheets`);
+    } catch (err) {
+      toast(err.message || 'Sync failed', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  });
   els.specialsBackBtn.addEventListener('click', () => { showView('home'); });
   els.newSpecialBtn.addEventListener('click', () => openSpecialNew());
   els.spBackBtn.addEventListener('click', () => {
@@ -469,6 +510,120 @@
   els.spCancelBtn.addEventListener('click', () => {
     showView(specialNavSrc === 'edit' ? 'edit' : 'specials');
   });
+
+  /* ── Banking summary navigation ──────────────── */
+  let bankingCurrentTab = null;
+
+  els.homeBankingBtn.addEventListener('click', async () => {
+    showView('banking');
+    await loadBankingTabs();
+  });
+  $('bankingBackBtn').addEventListener('click', () => showView('home'));
+
+  async function loadBankingTabs() {
+    $('bankingTabsRow').innerHTML = '';
+    $('bankingTableWrap').innerHTML = '';
+    $('bankingLoading').hidden = false;
+    try {
+      const tabs = await api('/api/banking/tabs');
+      $('bankingLoading').hidden = true;
+      const sel = document.createElement('select');
+      sel.className = 'banking-week-select';
+      tabs.forEach(tab => {
+        const opt = document.createElement('option');
+        opt.value = tab;
+        opt.textContent = 'W/E ' + tab.replace('W_', '');
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', () => loadBankingTab(sel.value));
+      $('bankingTabsRow').appendChild(sel);
+      if (tabs.length) loadBankingTab(tabs[0]);
+    } catch (err) {
+      $('bankingLoading').hidden = true;
+      toast(err.message, 'error');
+    }
+  }
+
+  async function loadBankingTab(tabName) {
+    bankingCurrentTab = tabName;
+    $('bankingLoading').hidden = false;
+    $('bankingTableWrap').innerHTML = '';
+    try {
+      const rows = await api(`/api/banking/tab/${encodeURIComponent(tabName)}`);
+      $('bankingLoading').hidden = true;
+      renderBankingTable(rows);
+    } catch (err) {
+      $('bankingLoading').hidden = true;
+      toast(err.message, 'error');
+    }
+  }
+
+  function renderBankingTable(rows) {
+    const wrap = $('bankingTableWrap');
+    if (!rows.length) { wrap.innerHTML = '<p class="empty-title" style="padding:24px;text-align:center">No data</p>'; return; }
+    const maxCols = Math.max(...rows.map(r => r.length));
+    const table = document.createElement('table'); table.className = 'banking-table';
+    rows.forEach((row, ri) => {
+      const tr = document.createElement('tr');
+      const isTotalRow = (row[0] || '').toString().toUpperCase() === 'TOTAL';
+      const isHeaderRow = (row[0] || '').toString().toUpperCase() === 'DAY';
+      if (isTotalRow) tr.className = 'banking-total-row';
+      if (isHeaderRow) tr.className = 'banking-header-row';
+      for (let ci = 0; ci < maxCols; ci++) {
+        const cell = isHeaderRow ? document.createElement('th') : document.createElement('td');
+        const val = (row[ci] || '').toString();
+        cell.textContent = val;
+        if (!isHeaderRow && ci > 1 && val !== '' && !isNaN(Number(val.replace(/[$,]/g, '')))) {
+          cell.className = 'banking-num';
+        }
+        if (!isHeaderRow) {
+          cell.dataset.cell = `${String.fromCharCode(65 + ci)}${ri + 1}`;
+          cell.classList.add('banking-editable');
+          cell.addEventListener('click', () => startCellEdit(cell));
+        }
+        tr.appendChild(cell);
+      }
+      table.appendChild(tr);
+    });
+    wrap.appendChild(table);
+  }
+
+  function startCellEdit(cell) {
+    if (cell.querySelector('input')) return;
+    const orig = cell.textContent;
+    const input = document.createElement('input');
+    input.className = 'banking-cell-input';
+    input.value = orig;
+    cell.textContent = '';
+    cell.appendChild(input);
+    input.focus();
+    input.select();
+
+    let saved = false;
+    const save = async () => {
+      if (saved) return;
+      saved = true;
+      const newVal = input.value.trim();
+      cell.textContent = newVal;
+      if (newVal === orig) return;
+      try {
+        await api('/api/banking/update', {
+          method: 'POST',
+          body: JSON.stringify({ tab: bankingCurrentTab, cell: cell.dataset.cell, value: newVal }),
+        });
+        toast('Saved');
+      } catch (err) {
+        toast(err.message, 'error');
+        cell.textContent = orig;
+      }
+    };
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { saved = true; cell.textContent = orig; }
+    });
+  }
 
   /* ── Transactions navigation ──────────────────── */
   els.homeTransBtn.addEventListener('click', () => {
@@ -537,9 +692,25 @@
     spSearch = ''; loadSpecials(true); els.spSearchInput.focus();
   });
 
+  /* ── Department chips ────────────────────────── */
+  $('deptChips').addEventListener('click', e => {
+    const chip = e.target.closest('[data-dept]'); if (!chip) return;
+    listDept = chip.dataset.dept;
+    document.querySelectorAll('#deptChips [data-dept]').forEach(c =>
+      c.classList.toggle('active', c.dataset.dept === listDept));
+    loadItems(els.searchInput.value.trim());
+  });
+
+  $('activeOnlyBtn').addEventListener('click', () => {
+    listActiveOnly = !listActiveOnly;
+    $('activeOnlyBtn').classList.toggle('active', listActiveOnly);
+    loadItems(els.searchInput.value.trim());
+  });
+
   /* ── Pagination state ────────────────────────── */
   const PAGE_SIZE = 50;
   let listSearch = '', listOffset = 0, listAllLoaded = false, listLoading = false;
+  let listDept = '', listActiveOnly = false, cachedDepts = null, cachedUnits = null;
 
   /* ── Search ───────────────────────────────────── */
   let searchTimer = null;
@@ -565,7 +736,7 @@
     const meta = [];
     if (item.UPC) meta.push(item.UPC);
     if (item.SKU) meta.push(`SKU ${item.SKU}`);
-    if (item.Department) meta.push(`Dept ${item.Department}`);
+    if (item.Department != null && item.Department !== '') meta.push(getDeptName(item.Department));
     li.innerHTML = `
       <div class="item-avatar">${initials}</div>
       <div class="item-body"><div class="item-name"></div><div class="item-meta"></div></div>
@@ -639,7 +810,10 @@
     const isFirst = listOffset === 0;
     if (!isFirst) els.loadMoreSpinner.hidden = false;
     try {
-      const items = await api(`/api/items?search=${encodeURIComponent(listSearch)}&offset=${listOffset}&limit=${PAGE_SIZE}`);
+      let itemsUrl = `/api/items?search=${encodeURIComponent(listSearch)}&offset=${listOffset}&limit=${PAGE_SIZE}`;
+      if (listDept) itemsUrl += `&dept=${encodeURIComponent(listDept)}`;
+      if (listActiveOnly) itemsUrl += `&inactive=0`;
+      const items = await api(itemsUrl);
       if (isFirst) els.skeleton.hidden = true;
       els.loadMoreSpinner.hidden = true;
       if (items.length < PAGE_SIZE) listAllLoaded = true;
@@ -656,6 +830,28 @@
       toast(err.message, 'error');
     }
     listLoading = false;
+  }
+
+  async function loadDeptChips() {
+    if (cachedDepts === null) {
+      try { cachedDepts = await api('/api/departments'); } catch { cachedDepts = []; }
+    }
+    const container = $('deptChips');
+    container.innerHTML = '';
+    if (!cachedDepts.length) { $('listFilterBar').hidden = true; return; }
+    $('listFilterBar').hidden = false;
+    const allBtn = document.createElement('button');
+    allBtn.className = 'dept-chip' + (listDept === '' ? ' active' : '');
+    allBtn.dataset.dept = ''; allBtn.textContent = 'All';
+    container.appendChild(allBtn);
+    for (const d of cachedDepts) {
+      const btn = document.createElement('button');
+      const deptKey = String(d.id);
+      btn.className = 'dept-chip' + (listDept === deptKey ? ' active' : '');
+      btn.dataset.dept = deptKey; btn.textContent = d.name;
+      container.appendChild(btn);
+    }
+    $('activeOnlyBtn').classList.toggle('active', listActiveOnly);
   }
 
   const sentinelObserver = new IntersectionObserver(entries => {
@@ -678,6 +874,7 @@
     if (customRow) customRow.hidden = (range !== 'custom');
 
     $('salesStats').hidden     = true;
+    $('salesMedia').hidden     = true;
     $('salesMonthly').hidden   = true;
     $('salesTrend').hidden     = true;
     $('salesTrending').hidden  = true;
@@ -694,10 +891,11 @@
         else { renderMonthly(monthly); $('salesMonthly').hidden = false; }
       } else {
         const qs = salesRangeQS(range);
-        const [summary, trend, trending] = await Promise.all([
+        const [summary, trend, trending, media] = await Promise.all([
           api(`/api/sales/summary?${qs}`),
           api(`/api/sales/trend?${qs}`),
           api(`/api/sales/trending?${qs}&limit=${TRENDING_PAGE}&offset=0`),
+          api(`/api/sales/media?${qs}`),
         ]);
         els.salesLoading.hidden = true;
         if (summary.transCount === 0) { $('salesEmpty').hidden = false; }
@@ -705,12 +903,32 @@
           renderStats(summary);
           $('salesStats').hidden = false;
           renderTrend(trend, range);
+          renderMedia(media);
+          $('salesMedia').hidden = false;
         }
         renderTrending(trending, false);
       }
     } catch (err) {
       els.salesLoading.hidden = true;
       toast(err.message, 'error');
+    }
+  }
+
+  function renderMedia(rows) {
+    const list = $('mediaList');
+    list.innerHTML = '';
+    if (!rows.length) return;
+    const total = rows.reduce((s, r) => s + r.amount, 0);
+    for (const r of rows) {
+      const pct = total > 0 ? (r.amount / total) * 100 : 0;
+      const row = document.createElement('div'); row.className = 'media-row';
+      row.innerHTML = `
+        <div class="media-name">${r.media}</div>
+        <div class="media-bar-wrap"><div class="media-bar" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="media-amount">${fmt$(r.amount)}</div>
+        <div class="media-count">${r.transCount} txn</div>
+      `;
+      list.appendChild(row);
     }
   }
 
@@ -946,6 +1164,7 @@
   }
   $('salesFromDate')?.addEventListener('change', onCustomDateChange);
   $('salesToDate')?.addEventListener('change', onCustomDateChange);
+  $('salesEmptyWeekBtn').addEventListener('click', () => loadSales('week'));
 
   /* ── Form build ───────────────────────────────── */
   function buildForm() {
@@ -982,6 +1201,25 @@
       input = document.createElement('input'); input.type = 'number'; input.step = '0.01'; input.min = '0';
       if (def.required) input.required = true; input.placeholder = '0.00';
       wrap.append(sym, input); row.appendChild(wrap);
+    } else if (def.optionsApi) {
+      const sel = document.createElement('select'); sel.className = 'field-select';
+      const nullOpt = document.createElement('option'); nullOpt.value = ''; nullOpt.textContent = '—';
+      sel.appendChild(nullOpt);
+      for (const o of (cachedDepts || [])) {
+        const opt = document.createElement('option');
+        opt.value = String(o.id); opt.textContent = o.name;
+        sel.appendChild(opt);
+      }
+      input = sel;
+    } else if (def.valuesApi) {
+      const sel = document.createElement('select'); sel.className = 'field-select';
+      const nullOpt = document.createElement('option'); nullOpt.value = ''; nullOpt.textContent = '—';
+      sel.appendChild(nullOpt);
+      for (const v of (cachedUnits || [])) {
+        const opt = document.createElement('option'); opt.value = v; opt.textContent = v;
+        sel.appendChild(opt);
+      }
+      input = sel;
     } else if (def.type === 'int') {
       input = document.createElement('input'); input.type = 'number'; input.step = '1'; input.placeholder = '0';
     } else if (def.type === 'datetime') {
@@ -1345,7 +1583,7 @@
         const total = Number(line.SubAfterTax) || 0;
         const unit  = qty ? total / qty : 0;
         const row   = document.createElement('div');
-        row.className = 'trans-line-row';
+        row.className = 'trans-line-row' + (line.UPC ? ' trans-line-tappable' : '');
         row.innerHTML = `
           <div class="trans-line-body">
             <div class="trans-line-desc"></div>
@@ -1354,11 +1592,18 @@
           <div class="trans-line-right">
             <div class="trans-line-total"></div>
             <div class="trans-line-meta"></div>
-          </div>`;
+          </div>
+          ${line.UPC ? '<span class="trans-line-arrow">›</span>' : ''}`;
         row.querySelector('.trans-line-desc').textContent  = line.Description || line.UPC;
         row.querySelector('.trans-line-upc').textContent   = (line.UPC && line.UPC !== line.Description) ? line.UPC : '';
         row.querySelector('.trans-line-total').textContent = fmt$(total);
         row.querySelector('.trans-line-meta').textContent  = qty > 1 ? `${qty} \xd7 ${fmt$(unit)}` : '';
+        if (line.UPC) {
+          const upc = line.UPC;
+          row.setAttribute('role', 'button'); row.tabIndex = 0; row.title = 'View item';
+          row.addEventListener('click', () => openEdit(upc));
+          row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') openEdit(upc); });
+        }
         linesGroup.appendChild(row);
       }
       content.appendChild(linesGroup);
@@ -1472,6 +1717,16 @@
 
     body.append(row1, priceRow, row3);
 
+    // Urgency badge: active specials expiring within 7 days
+    if (status === 'active' && sp.ToDate) {
+      const daysLeft = Math.ceil((new Date(sp.ToDate) - new Date()) / 86400000);
+      if (daysLeft >= 0 && daysLeft <= 7) {
+        const badge = document.createElement('div'); badge.className = 'sp-expires-badge';
+        badge.textContent = daysLeft === 0 ? 'Expires today' : daysLeft === 1 ? 'Expires tomorrow' : `Expires in ${daysLeft} days`;
+        body.appendChild(badge);
+      }
+    }
+
     // Date range (only if set)
     if (sp.FromDate || sp.ToDate) {
       const dates = document.createElement('div'); dates.className = 'sp-card-dates';
@@ -1525,11 +1780,11 @@
   /* ── Special edit form ────────────────────────── */
   function fillSpecialForm(sp) {
     const p = n => String(n).padStart(2, '0');
-    function toLocalInput(val) {
+    function toDateInput(val) {
       if (!val) return '';
       const d = new Date(val);
       if (isNaN(d)) return '';
-      return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+      return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
     }
     els.spDescription.value  = sp.Description  || '';
     els.spInActive.checked   = !!sp.InActive;
@@ -1538,15 +1793,15 @@
     els.spPriceType.value    = sp.PriceType     || 'D';
     els.spValue.value        = sp.Value != null  ? String(sp.Value) : '';
     els.spCombQty.value      = sp.CombQty != null ? String(sp.CombQty) : '';
-    els.spFromDate.value     = toLocalInput(sp.FromDate);
-    els.spToDate.value       = toLocalInput(sp.ToDate);
+    els.spFromDate.value     = toDateInput(sp.FromDate);
+    els.spToDate.value       = toDateInput(sp.ToDate);
     els.spDayOfWeek.value    = sp.DayOfWeek != null ? String(sp.DayOfWeek) : '0';
   }
 
   function readSpecialForm() {
-    function localToISO(val) {
+    function dateToISO(val, endOfDay = false) {
       if (!val) return null;
-      const d = new Date(val);
+      const d = new Date(val + (endOfDay ? 'T23:59:59' : 'T00:00:00'));
       return isNaN(d) ? null : d.toISOString();
     }
     return {
@@ -1557,8 +1812,8 @@
       PriceType:    els.spPriceType.value || 'D',
       Value:        els.spValue.value !== '' ? Number(els.spValue.value) : null,
       CombQty:      els.spCombQty.value !== '' ? Number(els.spCombQty.value) : null,
-      FromDate:     localToISO(els.spFromDate.value),
-      ToDate:       localToISO(els.spToDate.value),
+      FromDate:     dateToISO(els.spFromDate.value, false),
+      ToDate:       dateToISO(els.spToDate.value,   true),
       DayOfWeek:    Number(els.spDayOfWeek.value) || 0,
     };
   }
